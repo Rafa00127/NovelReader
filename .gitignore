@@ -1,0 +1,32 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# CMake
+build/
+build-*/
+CMakeCache.txt
+CMakeFiles/
+*.cmake
+
+# Models (too large for GitHub)
+*.gguf
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Reader demo
+reader_demo/dll/
+reader_demo/venv/
+reader_demo/*.bat
+
+# OS
+.DS_Store
+Thumbs.db
+
