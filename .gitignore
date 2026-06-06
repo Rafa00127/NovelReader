@@ -21,6 +21,9 @@ CMakeFiles/
 .vscode/
 .idea/
 
+# Backend
+Backend/*.bat
+
 # Reader demo
 reader_demo/dll/
 reader_demo/venv/
@@ -29,4 +32,5 @@ reader_demo/*.bat
 # OS
 .DS_Store
 Thumbs.db
+
 
