@@ -51,7 +51,7 @@ class TtsParams(ctypes.Structure):
         ("max_codec_steps", ctypes.c_int),
         ("flash_attn",      ctypes.c_bool),
     ]
-
+#os.environ["QWEN3_TTS_CODEC_GPU"] = "1"
 _dll = ctypes.CDLL(os.path.join(_DLL_DIR, "qwen3_tts_shared.dll"))
 _dll.qwen3_tts_context_default_params.restype = TtsParams
 _dll.qwen3_tts_init_from_file.argtypes = [ctypes.c_char_p, TtsParams]
@@ -856,6 +856,8 @@ class ReaderWin(QMainWindow):
         self._nxt += 1; self._prog.setValue(self._nxt)
         self._st.setText(f"播放中 ({self._nxt}/{self._total})")
         idx = self._nxt - 1
+        if idx > 0:
+            with self._wavs_lock: self._wavs.pop(idx - 1, None)
         if self._sync_scroll and self._total > 0 and idx < len(self._sens):
             doc = self._tx.document()
             needle = self._sens[idx][:30]
