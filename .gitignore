@@ -9,6 +9,8 @@ obj/
 # CMake
 build/
 build-*/
+Backend/build/
+BackendServer/build/
 CMakeCache.txt
 CMakeFiles/
 *.cmake
@@ -23,6 +25,7 @@ CMakeFiles/
 
 # Backend
 Backend/*.bat
+BackendServer/*.bat
 
 # Reader demo
 reader_demo/dll/
