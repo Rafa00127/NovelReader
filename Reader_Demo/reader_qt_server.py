@@ -1,5 +1,5 @@
 """小说朗读器 — PyQt6 现代深色 UI + CrispASR TCP TTS Server 后端。"""
-import os, sys, re, json, threading, queue, struct, socket, time, wave, tempfile
+import ctypes, os, sys, re, json, threading, queue, struct, socket, time, wave, tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -460,6 +460,7 @@ class ReaderWin(QMainWindow):
 
     def _on_chap(self, idx):
         if idx >= 0: self._ci = idx; self._pi = 0; self._show(idx, 0)
+        self._paused_gid = 0
         self._tx.verticalScrollBar().setValue(0); self._ri()
 
     def _search_chap(self, txt):
@@ -523,9 +524,6 @@ class ReaderWin(QMainWindow):
             if hasattr(self, '_paused_gid') and self._paused_gid != 0:
                 self._synth_pause.set()
                 self._gid = 0; self._paused_gid = 0
-                if not self._synth_done.wait(10):
-                    self._st.setText("等待上一个合成完成..."); QApplication.processEvents()
-                    self._synth_done.wait()
             self._sap()
 
     def _resume(self):
@@ -552,16 +550,8 @@ class ReaderWin(QMainWindow):
         self._paused_nxt = max(0, self._nxt - 1)
         self._paused_para = self._para_start
         self._paused_total = self._total
-        self._save_sent = self._para_start + self._sent_in_para(self._nxt)
         self._info.setText("已暂停"); self._st.setText("")
 
-    def _sent_in_para(self, nxt):
-        if not hasattr(self, '_sens_para_map') or nxt <= 0:
-            return 0
-        for sp in self._sens_para_map:
-            if sp[0] >= nxt:
-                return max(0, sp[1] - 1)
-        return self._sens_para_map[-1][1] if self._sens_para_map else 0
 
     def _sap(self):
         if not self._playing: return
@@ -661,8 +651,10 @@ class ReaderWin(QMainWindow):
                 else:
                     self._pn()
             except Exception:
-                if self._nxt >= self._total: self._av()
-                else: self._pn()
+                import traceback
+                traceback.print_exc()
+                self._st.setText("播放错误"); self._st.setStyleSheet("color:#f00;")
+                self._playing = False; self._play_btn.setText("▶ 播放")
         _w()
 
     def _dn(self):
@@ -671,11 +663,13 @@ class ReaderWin(QMainWindow):
 
     def _pr(self):
         if self._ci > 0: self._ci -= 1; self._pi = 0
+        self._paused_gid = 0
         self._cl.setCurrentRow(self._ci); self._show(self._ci, 0)
         self._tx.verticalScrollBar().setValue(0); self._ri()
 
     def _nx(self):
         self._playing = False; sd.stop()
+        self._paused_gid = 0
         if self._ci + 1 < len(self._chs):
             self._ci += 1; self._pi = 0; self._cl.setCurrentRow(self._ci); self._show(self._ci, 0)
         self._tx.verticalScrollBar().setValue(0); self._ri(); self._st.setText("")
@@ -716,8 +710,9 @@ class ReaderWin(QMainWindow):
 
 
 if __name__ == "__main__":
-    # if sys.platform == "win32":
-    #     ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    ###隐藏控制台窗口
+    if sys.platform == "win32":
+        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
     app = QApplication(sys.argv); app.setStyle("Fusion")
     win = ReaderWin(); win.show()
     sys.exit(app.exec())
