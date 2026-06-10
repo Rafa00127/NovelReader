@@ -1,7 +1,7 @@
 // tts_server.cpp — Simple TCP TTS server for CrispASR.
 // Loads talker+codec once, GPU-resident, serializes synthesis via mutex.
-// Protocol: client sends 4-byte LE text_len + UTF-8 text, server replies
-//           4-byte LE n_samples + float32 PCM.
+// Protocol: client sends 4-byte big-endian text_len + UTF-8 text, server replies
+//           4-byte big-endian n_samples + float32 PCM.
 // Compile: add_executable(tts_server tts_server.cpp)
 //          target_link_libraries(tts_server qwen3_tts crispasr-core ggml ggml-base ggml-cpu)
 //          + ggml-hip if HIP build.
@@ -55,6 +55,16 @@ static void die(const char* msg) {
     exit(1);
 }
 
+static bool send_all(SOCKET fd, const char* data, int len) {
+    int sent = 0;
+    while (sent < len) {
+        int n = send(fd, data + sent, len - sent, 0);
+        if (n == SOCKET_ERROR) return false;
+        sent += n;
+    }
+    return true;
+}
+
 static bool load_model() {
     qwen3_tts_context_params cp = qwen3_tts_context_default_params();
     cp.verbosity = 0;
@@ -103,6 +113,7 @@ static bool synth_one(const char* text, std::vector<float>& pcm) {
         fprintf(stderr, "[tts_server] calling qwen3_tts_synthesize...\n"); fflush(stderr);
         raw = qwen3_tts_synthesize(g_ctx, text, &n_samples);
         fprintf(stderr, "[tts_server] synthesize returned raw=%p n_samples=%d\n", (void*)raw, n_samples); fflush(stderr);
+        // qwen3_tts_sync(g_ctx);  // drain GPU command queue before next synthesis
     }
     if (!raw || n_samples <= 0) return false;
     pcm.assign(raw, raw + n_samples);
@@ -129,15 +140,15 @@ static void handle_client(SOCKET client_fd) {
     if (!synth_one(text.c_str(), pcm)) {
         fprintf(stderr, "[tts_server] synth_one failed\n"); fflush(stderr);
         int32_t err = htonl(-1);
-        send(client_fd, (const char*)&err, 4, 0);
+        send_all(client_fd, (const char*)&err, 4);
         closesocket(client_fd);
         return;
     }
 
-    // Reply: 4-byte n_samples (network byte order) + float32 PCM (host byte order)
+    // Reply: 4-byte n_samples (network byte order) + float32 PCM
     int32_t ns_be = htonl((int32_t)pcm.size());
-    send(client_fd, (const char*)&ns_be, 4, 0);
-    send(client_fd, (const char*)pcm.data(), (int)(pcm.size() * sizeof(float)), 0);
+    send_all(client_fd, (const char*)&ns_be, 4);
+    send_all(client_fd, (const char*)pcm.data(), (int)(pcm.size() * sizeof(float)));
     shutdown(client_fd, SD_SEND);  // graceful close — client sees EOF, not RST
     closesocket(client_fd);
 }
