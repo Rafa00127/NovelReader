@@ -1,5 +1,5 @@
 """小说朗读器 — PyQt6 现代深色 UI + CrispASR TCP TTS Server 后端。"""
-import ctypes, os, sys, re, json, threading, queue, struct, socket, time, wave, tempfile
+import ctypes, os, sys, re, json, threading, queue, struct, socket, time, wave, tempfile, subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -245,30 +245,117 @@ class SettingsDialog(QDialog):
         save_cfg(self._c); self.accept()
 
 
-class ModelDialog(QDialog):
+class ServerDialog(QDialog):
     def __init__(self, parent, cfg):
         super().__init__(parent); self._c = cfg
-        self.setWindowTitle("Server 路径"); self.setFixedSize(600, 120)
+        self.setWindowTitle("模型服务器"); self.setFixedSize(620, 460)
         self.setStyleSheet(QSS)
-        lay = QVBoxLayout(self); lay.setSpacing(8)
+        lay = QVBoxLayout(self); lay.setSpacing(6)
+        sv = cfg.get("server", {})
 
-        r = QHBoxLayout(); r.addWidget(QLabel("Host:Port"))
-        self._host = QLineEdit(cfg.get("server_addr", "127.0.0.1:9988"))
-        r.addWidget(self._host); lay.addLayout(r)
+        def _row(label, *widgets):
+            r = QHBoxLayout(); r.addWidget(QLabel(label))
+            for w in widgets: r.addWidget(w)
+            lay.addLayout(r)
 
-        save = QPushButton("保存"); save.clicked.connect(self._sv)
-        lay.addWidget(save, alignment=Qt.AlignmentFlag.AlignCenter)
+        self._talker = QLineEdit(sv.get("talker", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("Talker 模型")); r.addWidget(self._talker)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._talker)); r.addWidget(b); lay.addLayout(r)
+        self._codec = QLineEdit(sv.get("codec", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("Codec 模型")); r.addWidget(self._codec)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._codec)); r.addWidget(b); lay.addLayout(r)
 
-    def _sv(self):
-        hp = self._host.text().strip()
-        self._c["server_addr"] = hp
-        # Parse into global host/port
-        if ":" in hp:
-            h, p = hp.rsplit(":", 1)
-            global SERVER_HOST, SERVER_PORT
-            SERVER_HOST = h
-            SERVER_PORT = int(p)
-        save_cfg(self._c); self.accept()
+        self._exe = QLineEdit(sv.get("exe", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("Server 路径")); r.addWidget(self._exe)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br_exe(self._exe)); r.addWidget(b); lay.addLayout(r)
+
+        self._port = QLineEdit(sv.get("port", "9988"))
+        _row("端口", self._port)
+        self._mode = QComboBox()
+        _row("模式", self._mode)
+        self._mode.addItems(["Base", "CustomVoice"])
+        self._mode.setCurrentText(sv.get("mode", "Base"))
+        self._mode.currentTextChanged.connect(self._on_mode)
+        lay.addWidget(self._mode)
+
+        self._base_box = QWidget()
+        bl = QVBoxLayout(self._base_box); bl.setContentsMargins(0, 0, 0, 0)
+        bl.addWidget(QLabel("── Base 语音克隆 ──"))
+        self._ra = QLineEdit(sv.get("ref_audio", ""))
+        ra_row = QHBoxLayout()
+        ra_row.addWidget(QLabel("参考音频"))
+        ra_row.addWidget(self._ra)
+        ra_btn = QPushButton("浏览")
+        ra_btn.clicked.connect(lambda: self._br(self._ra))
+        ra_row.addWidget(ra_btn)
+        bl.addLayout(ra_row)
+        self._rt = QLineEdit(sv.get("ref_text", ""))
+        rt_row = QHBoxLayout()
+        rt_row.addWidget(QLabel("参考文本"))
+        rt_row.addWidget(self._rt)
+        bl.addLayout(rt_row)
+        lay.addWidget(self._base_box)
+
+        self._cv_box = QWidget()
+        cvl = QVBoxLayout(self._cv_box); cvl.setContentsMargins(0, 0, 0, 0)
+        cvl.addWidget(QLabel("── CustomVoice 音色 ──"))
+        self._cv_spk = QLineEdit(sv.get("cv_speaker", ""))
+        cv_spk_row = QHBoxLayout()
+        cv_spk_row.addWidget(QLabel("音色名"))
+        cv_spk_row.addWidget(self._cv_spk)
+        cvl.addLayout(cv_spk_row)
+        lay.addWidget(self._cv_box)
+
+        self._lang = QComboBox()
+        _row("语言", self._lang)
+        self._lang.addItems(["auto", "zh", "en", "ja", "ko"])
+        self._lang.setCurrentText(sv.get("lang", "auto"))
+
+        self._on_mode(sv.get("mode", "Base"))
+
+        btn = QPushButton("🚀 启动 Server")
+        btn.setObjectName("playBtn"); btn.clicked.connect(self._launch)
+        lay.addWidget(btn)
+        self._status = QLabel(""); lay.addWidget(self._status)
+
+    def _br(self, w):
+        p = QFileDialog.getOpenFileName(self, "选择", w.text(), "GGUF (*.gguf);;音频 (*.wav *.mp3);;所有 (*.*)")
+        if p[0]: w.setText(p[0])
+    def _br_exe(self, w):
+        p = QFileDialog.getOpenFileName(self, "选择", w.text(), "exe (*.exe);;所有 (*.*)")
+        if p[0]: w.setText(p[0])
+
+    def _on_mode(self, mode):
+        self._base_box.setVisible(mode == "Base")
+        self._cv_box.setVisible(mode == "CustomVoice")
+
+    def _launch(self):
+        sv = {
+            "exe": self._exe.text(), "talker": self._talker.text(),
+            "codec": self._codec.text(), "port": self._port.text(),
+            "mode": self._mode.currentText(),
+            "ref_audio": self._ra.text(),
+            "ref_text": self._rt.text(),
+            "cv_speaker": self._cv_spk.text(),
+            "lang": self._lang.currentText(),
+        }
+        self._c["server"] = sv
+        save_cfg(self._c)
+        args = [sv.get("exe", "").strip() or "tts_server.exe",
+                "--model", sv["talker"], "--codec", sv["codec"],
+                "--port", sv["port"], "--lang", sv["lang"]]
+        if sv["mode"] == "CustomVoice":
+            if sv.get("cv_speaker"): args += ["--cv-speaker", sv["cv_speaker"]]
+        else:
+            if sv.get("ref_audio"): args += ["--ref-audio", sv["ref_audio"]]
+            if sv.get("ref_text"): args += ["--ref-text", sv["ref_text"]]
+        cmd_line = " ".join(f'"{a}"' if " " in a else a for a in args)
+        bat = os.path.join(_FILE_DIR, "tts_launch.bat")
+        with open(bat, "w", encoding="utf-8") as f:
+            f.write(f"@echo off\r\nchcp 65001 >nul\r\nset QWEN3_TTS_CODEC_GPU=1\r\n{cmd_line}\r\npause\r\n")
+        os.startfile(bat)
+        self._status.setText("Server 已在新窗口启动，关闭窗口即停止。")
+        self._status.setStyleSheet("color:#0a0;")
 
 
 # ═══════════ 主窗口 ═══════════
@@ -284,12 +371,11 @@ class ReaderWin(QMainWindow):
         self._synth_pause = threading.Event(); self._synth_pause.set()
         self._sync_scroll = False
 
-        # Parse server addr early
-        sa = self._c.get("server_addr", "127.0.0.1:9988")
-        if ":" in sa:
-            global SERVER_HOST, SERVER_PORT
-            SERVER_HOST, p = sa.rsplit(":", 1)
-            SERVER_PORT = int(p)
+        # Read server port from saved config
+        sv = self._c.get("server", {})
+        if sv.get("port"):
+            global SERVER_PORT
+            SERVER_PORT = int(sv["port"])
 
         self._build(); self._restore()
 
@@ -300,7 +386,8 @@ class ReaderWin(QMainWindow):
         # ── 工具栏 ──
         tb = QHBoxLayout()
         for t, f in [("📂 打开", self._ob),
-                     ("🔧 Server", lambda: ModelDialog(self, self._c).exec()),
+                     ("🔧 模型配置", lambda: ServerDialog(self, self._c).exec()),
+                     ("🚀 启动", self._launch_server),
                      ("⚙ 设置", lambda: SettingsDialog(self, self._c).exec())]:
             b = QPushButton(t); b.clicked.connect(f); tb.addWidget(b)
 
@@ -320,7 +407,7 @@ class ReaderWin(QMainWindow):
         tb.addStretch()
         self._chap_btn = QPushButton("📑 目录"); self._chap_btn.clicked.connect(self._toggle_chap)
         tb.addWidget(self._chap_btn)
-        self._ml = QLabel("Server: 127.0.0.1:9988"); self._ml.setStyleSheet("color:#0a0;"); tb.addWidget(self._ml)
+        self._ml = QLabel(f"Server: 127.0.0.1:{SERVER_PORT}"); self._ml.setStyleSheet("color:#0a0;"); tb.addWidget(self._ml)
         lay.addLayout(tb)
 
         # ── 正文 ──
@@ -460,7 +547,6 @@ class ReaderWin(QMainWindow):
 
     def _on_chap(self, idx):
         if idx >= 0: self._ci = idx; self._pi = 0; self._show(idx, 0)
-        self._paused_gid = 0
         self._tx.verticalScrollBar().setValue(0); self._ri()
 
     def _search_chap(self, txt):
@@ -475,6 +561,28 @@ class ReaderWin(QMainWindow):
         if self._chs:
             self._info.setText(f"{self._chs[self._ci][0]} · 段{self._pi + 1}")
             self._loc.setText(f"章{self._ci + 1}/{len(self._chs)}")
+
+    # ── Server 启动 ──
+    def _launch_server(self):
+        sv = self._c.get("server", {})
+        if not sv.get("talker") or not sv.get("codec"):
+            QMessageBox.warning(self, "提示", "请先在「模型配置」中设置 talker.gguf 和 codec.gguf 路径")
+            return
+        exe = (sv.get("exe") or "").strip() or "tts_server.exe"
+        args = [exe,
+                "--model", sv["talker"], "--codec", sv["codec"],
+                "--port", sv.get("port", "9988"), "--lang", sv.get("lang", "auto")]
+        if sv.get("mode") == "CustomVoice":
+            if sv.get("cv_speaker"): args += ["--cv-speaker", sv["cv_speaker"]]
+        else:
+            if sv.get("ref_audio"): args += ["--ref-audio", sv["ref_audio"]]
+            if sv.get("ref_text"): args += ["--ref-text", sv["ref_text"]]
+        bat = os.path.join(_FILE_DIR, "tts_launch.bat")
+        if os.path.exists(bat):
+            os.startfile(bat)
+            self._ml.setText("Server 启动中..."); self._ml.setStyleSheet("color:#fa0;")
+        else:
+            QMessageBox.warning(self, "提示", "请先在「模型配置」中设置并启动一次 Server")
 
     # ── 播放 ──
     def _tp(self):
@@ -524,6 +632,9 @@ class ReaderWin(QMainWindow):
             if hasattr(self, '_paused_gid') and self._paused_gid != 0:
                 self._synth_pause.set()
                 self._gid = 0; self._paused_gid = 0
+                if not self._synth_done.wait(10):
+                    self._st.setText("等待上一个合成完成..."); QApplication.processEvents()
+                    self._synth_done.wait()
             self._sap()
 
     def _resume(self):
@@ -550,8 +661,16 @@ class ReaderWin(QMainWindow):
         self._paused_nxt = max(0, self._nxt - 1)
         self._paused_para = self._para_start
         self._paused_total = self._total
+        self._save_sent = self._para_start + self._sent_in_para(self._nxt)
         self._info.setText("已暂停"); self._st.setText("")
 
+    def _sent_in_para(self, nxt):
+        if not hasattr(self, '_sens_para_map') or nxt <= 0:
+            return 0
+        for sp in self._sens_para_map:
+            if sp[0] >= nxt:
+                return max(0, sp[1] - 1)
+        return self._sens_para_map[-1][1] if self._sens_para_map else 0
 
     def _sap(self):
         if not self._playing: return
@@ -651,10 +770,8 @@ class ReaderWin(QMainWindow):
                 else:
                     self._pn()
             except Exception:
-                import traceback
-                traceback.print_exc()
-                self._st.setText("播放错误"); self._st.setStyleSheet("color:#f00;")
-                self._playing = False; self._play_btn.setText("▶ 播放")
+                if self._nxt >= self._total: self._av()
+                else: self._pn()
         _w()
 
     def _dn(self):
@@ -663,13 +780,11 @@ class ReaderWin(QMainWindow):
 
     def _pr(self):
         if self._ci > 0: self._ci -= 1; self._pi = 0
-        self._paused_gid = 0
         self._cl.setCurrentRow(self._ci); self._show(self._ci, 0)
         self._tx.verticalScrollBar().setValue(0); self._ri()
 
     def _nx(self):
         self._playing = False; sd.stop()
-        self._paused_gid = 0
         if self._ci + 1 < len(self._chs):
             self._ci += 1; self._pi = 0; self._cl.setCurrentRow(self._ci); self._show(self._ci, 0)
         self._tx.verticalScrollBar().setValue(0); self._ri(); self._st.setText("")
