@@ -1,5 +1,5 @@
 """Simple TTS GUI — 文本转语音，试听后保存。"""
-import ctypes, os, sys, json, struct, socket, time, threading
+import ctypes, os, sys, json, struct, socket, time, threading, wave
 import numpy as np
 import sounddevice as sd
 from PyQt6.QtWidgets import *
@@ -55,6 +55,39 @@ def load_cfg():
 def save_cfg(c):
     with open(CONFIG, "w", encoding="utf-8") as f:
         json.dump(c, f, ensure_ascii=False, indent=2)
+
+
+# ═══════════ 响度归一化 ═══════════
+
+_LOUDNORM_REF = -18.0  # LUFS
+
+def normalize_ref_audio(src_path):
+    """Normalize reference audio to -18 LUFS. Saves to script dir, reuses if exists."""
+    try:
+        base = os.path.splitext(os.path.basename(src_path))[0]
+        out_path = os.path.join(_FILE_DIR, f"{base}_norm.wav")
+        if os.path.exists(out_path):
+            return out_path
+        with wave.open(src_path, 'rb') as wf:
+            sr = wf.getframerate(); ch = wf.getnchannels()
+            sw = wf.getsampwidth(); n = wf.getnframes()
+            raw = wf.readframes(n)
+        fmt = {1: 'b', 2: 'h', 4: 'i'}.get(sw, 'h')
+        pcm = np.frombuffer(raw, dtype=np.dtype(f'<{fmt}')).astype(np.float32) / 32767.0
+        if ch > 1:
+            pcm = pcm.reshape(-1, ch).mean(axis=1)
+        rms = np.sqrt(np.mean(pcm * pcm))
+        if rms < 1e-8:
+            return src_path
+        target_rms = 10.0 ** (_LOUDNORM_REF / 20.0)
+        pcm = pcm * (target_rms / rms)
+        pcm = np.clip(pcm, -1.0, 1.0)
+        with wave.open(out_path, 'wb') as wf:
+            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr)
+            wf.writeframes((pcm * 32767.0).astype(np.int16).tobytes())
+        return out_path
+    except Exception:
+        return src_path
 
 
 # ═══════════ TTS 引擎 ═══════════
@@ -242,13 +275,13 @@ class ModelConfigDialog(QDialog):
             if sv.get("mode") == "CustomVoice":
                 if sv.get("cv_speaker"): args += ["--cv-speaker", sv["cv_speaker"]]
             else:
-                if sv.get("ref_audio"): args += ["--ref-audio", sv["ref_audio"]]
+                if sv.get("ref_audio"): args += ["--ref-audio", normalize_ref_audio(sv["ref_audio"])]
                 if sv.get("ref_text"): args += ["--ref-text", sv["ref_text"]]
         else:
             exe = (sv.get("fish_exe") or "").strip() or "fish2_server.exe"
             args = [exe, "--model", sv["fish_model"], "--tokenizer", sv["fish_tokenizer"],
                     "--port", sv["port"]]
-            if sv.get("fish_ref_audio"): args += ["--ref-audio", sv["fish_ref_audio"]]
+            if sv.get("fish_ref_audio"): args += ["--ref-audio", normalize_ref_audio(sv["fish_ref_audio"])]
             if sv.get("fish_ref_text"): args += ["--ref-text", sv["fish_ref_text"]]
 
         cmd_line = " ".join(f'"{a}"' if " " in a else a for a in args)
