@@ -13,7 +13,7 @@ from PyQt6.QtGui import *
 
 # ═══════════ 全局常量 ═══════════
 CONFIG = os.path.join(_FILE_DIR, "reader_config.json")
-SAMPLE_RATE = 24000
+SAMPLE_RATES = {"qwen": 24000, "fish": 44100}
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 9988
 
@@ -248,7 +248,7 @@ class SettingsDialog(QDialog):
 class ServerDialog(QDialog):
     def __init__(self, parent, cfg):
         super().__init__(parent); self._c = cfg
-        self.setWindowTitle("模型服务器"); self.setFixedSize(620, 460)
+        self.setWindowTitle("模型服务器"); self.setFixedSize(620, 500)
         self.setStyleSheet(QSS)
         lay = QVBoxLayout(self); lay.setSpacing(6)
         sv = cfg.get("server", {})
@@ -258,25 +258,62 @@ class ServerDialog(QDialog):
             for w in widgets: r.addWidget(w)
             lay.addLayout(r)
 
+        # Model type
+        self._model_type = QComboBox()
+        _row("模型类型", self._model_type)
+        self._model_type.addItems(["Qwen3-TTS", "Fish S2"])
+        self._model_type.setCurrentText(sv.get("model_type", "Qwen3-TTS"))
+        self._model_type.currentTextChanged.connect(self._on_model_type)
+        lay.addWidget(self._model_type)
+
+        # ── Qwen 字段 ──
+        self._qwen_box = QWidget()
+        ql = QVBoxLayout(self._qwen_box); ql.setContentsMargins(0, 0, 0, 0)
+        self._qwen_exe = QLineEdit(sv.get("exe", "qwen3tts_server.exe"))
+        r = QHBoxLayout(); r.addWidget(QLabel("Server 路径")); r.addWidget(self._qwen_exe)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br_exe(self._qwen_exe)); r.addWidget(b); ql.addLayout(r)
         self._talker = QLineEdit(sv.get("talker", ""))
         r = QHBoxLayout(); r.addWidget(QLabel("Talker 模型")); r.addWidget(self._talker)
-        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._talker)); r.addWidget(b); lay.addLayout(r)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._talker)); r.addWidget(b); ql.addLayout(r)
         self._codec = QLineEdit(sv.get("codec", ""))
         r = QHBoxLayout(); r.addWidget(QLabel("Codec 模型")); r.addWidget(self._codec)
-        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._codec)); r.addWidget(b); lay.addLayout(r)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._codec)); r.addWidget(b); ql.addLayout(r)
+        lay.addWidget(self._qwen_box)
 
-        self._exe = QLineEdit(sv.get("exe", ""))
-        r = QHBoxLayout(); r.addWidget(QLabel("Server 路径")); r.addWidget(self._exe)
-        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br_exe(self._exe)); r.addWidget(b); lay.addLayout(r)
+        # ── Fish 字段 ──
+        self._fish_box = QWidget()
+        fl = QVBoxLayout(self._fish_box); fl.setContentsMargins(0, 0, 0, 0)
+        self._fish_exe = QLineEdit(sv.get("fish_exe", "fish2_server.exe"))
+        r = QHBoxLayout(); r.addWidget(QLabel("Server exe")); r.addWidget(self._fish_exe)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br_exe(self._fish_exe)); r.addWidget(b); fl.addLayout(r)
+        self._fish_model = QLineEdit(sv.get("fish_model", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("Model (gguf)")); r.addWidget(self._fish_model)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._fish_model)); r.addWidget(b); fl.addLayout(r)
+        self._fish_tokenizer = QLineEdit(sv.get("fish_tokenizer", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("Tokenizer (json)")); r.addWidget(self._fish_tokenizer)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br_json(self._fish_tokenizer)); r.addWidget(b); fl.addLayout(r)
+        self._fish_ra = QLineEdit(sv.get("fish_ref_audio", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("参考音频")); r.addWidget(self._fish_ra)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._fish_ra)); r.addWidget(b); fl.addLayout(r)
+        self._fish_rt = QLineEdit(sv.get("fish_ref_text", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("参考文本")); r.addWidget(self._fish_rt)
+        fl.addLayout(r)
+        lay.addWidget(self._fish_box)
 
         self._port = QLineEdit(sv.get("port", "9988"))
         _row("端口", self._port)
+
+        self._lang = QComboBox()
+        _row("语言", self._lang)
+        self._lang.addItems(["auto", "zh", "en", "ja", "ko"])
+        self._lang.setCurrentText(sv.get("lang", "auto"))
+
+        # ── 语音克隆 (Qwen only) ──
         self._mode = QComboBox()
-        _row("模式", self._mode)
+        _row("模式 (Qwen only)", self._mode)
         self._mode.addItems(["Base", "CustomVoice"])
         self._mode.setCurrentText(sv.get("mode", "Base"))
         self._mode.currentTextChanged.connect(self._on_mode)
-        lay.addWidget(self._mode)
 
         self._base_box = QWidget()
         bl = QVBoxLayout(self._base_box); bl.setContentsMargins(0, 0, 0, 0)
@@ -306,11 +343,7 @@ class ServerDialog(QDialog):
         cvl.addLayout(cv_spk_row)
         lay.addWidget(self._cv_box)
 
-        self._lang = QComboBox()
-        _row("语言", self._lang)
-        self._lang.addItems(["auto", "zh", "en", "ja", "ko"])
-        self._lang.setCurrentText(sv.get("lang", "auto"))
-
+        self._on_model_type(sv.get("model_type", "Qwen3-TTS"))
         self._on_mode(sv.get("mode", "Base"))
 
         btn = QPushButton("🚀 启动 Server")
@@ -324,15 +357,36 @@ class ServerDialog(QDialog):
     def _br_exe(self, w):
         p = QFileDialog.getOpenFileName(self, "选择", w.text(), "exe (*.exe);;所有 (*.*)")
         if p[0]: w.setText(p[0])
+    def _br_json(self, w):
+        p = QFileDialog.getOpenFileName(self, "选择", w.text(), "JSON (*.json);;所有 (*.*)")
+        if p[0]: w.setText(p[0])
+
+    def _on_model_type(self, mt):
+        is_qwen = (mt == "Qwen3-TTS")
+        self._qwen_box.setVisible(is_qwen)
+        self._fish_box.setVisible(not is_qwen)
+        self._mode.setVisible(is_qwen)
+        self._base_box.setVisible(is_qwen and self._mode.currentText() == "Base")
+        self._cv_box.setVisible(is_qwen and self._mode.currentText() == "CustomVoice")
+        self._lang.setVisible(is_qwen)
 
     def _on_mode(self, mode):
-        self._base_box.setVisible(mode == "Base")
-        self._cv_box.setVisible(mode == "CustomVoice")
+        is_qwen = (self._model_type.currentText() == "Qwen3-TTS")
+        self._base_box.setVisible(is_qwen and mode == "Base")
+        self._cv_box.setVisible(is_qwen and mode == "CustomVoice")
 
     def _launch(self):
         sv = {
-            "exe": self._exe.text(), "talker": self._talker.text(),
-            "codec": self._codec.text(), "port": self._port.text(),
+            "model_type": self._model_type.currentText(),
+            "port": self._port.text(),
+            "exe": self._qwen_exe.text(),
+            "talker": self._talker.text(),
+            "codec": self._codec.text(),
+            "fish_exe": self._fish_exe.text(),
+            "fish_model": self._fish_model.text(),
+            "fish_tokenizer": self._fish_tokenizer.text(),
+            "fish_ref_audio": self._fish_ra.text(),
+            "fish_ref_text": self._fish_rt.text(),
             "mode": self._mode.currentText(),
             "ref_audio": self._ra.text(),
             "ref_text": self._rt.text(),
@@ -341,14 +395,24 @@ class ServerDialog(QDialog):
         }
         self._c["server"] = sv
         save_cfg(self._c)
-        args = [sv.get("exe", "").strip() or "tts_server.exe",
-                "--model", sv["talker"], "--codec", sv["codec"],
-                "--port", sv["port"], "--lang", sv["lang"]]
-        if sv["mode"] == "CustomVoice":
-            if sv.get("cv_speaker"): args += ["--cv-speaker", sv["cv_speaker"]]
+
+        is_qwen = (sv["model_type"] == "Qwen3-TTS")
+        if is_qwen:
+            exe = "qwen3tts_server.exe"
+            args = [exe, "--model", sv["talker"], "--codec", sv["codec"],
+                    "--port", sv["port"], "--lang", sv["lang"]]
+            if sv["mode"] == "CustomVoice":
+                if sv.get("cv_speaker"): args += ["--cv-speaker", sv["cv_speaker"]]
+            else:
+                if sv.get("ref_audio"): args += ["--ref-audio", sv["ref_audio"]]
+                if sv.get("ref_text"): args += ["--ref-text", sv["ref_text"]]
         else:
-            if sv.get("ref_audio"): args += ["--ref-audio", sv["ref_audio"]]
-            if sv.get("ref_text"): args += ["--ref-text", sv["ref_text"]]
+            exe = (sv.get("fish_exe") or "").strip() or "fish2_server.exe"
+            args = [exe, "--model", sv["fish_model"], "--tokenizer", sv["fish_tokenizer"],
+                    "--port", sv["port"]]
+            if sv.get("fish_ref_audio"): args += ["--ref-audio", sv["fish_ref_audio"]]
+            if sv.get("fish_ref_text"): args += ["--ref-text", sv["fish_ref_text"]]
+
         cmd_line = " ".join(f'"{a}"' if " " in a else a for a in args)
         bat = os.path.join(_FILE_DIR, "tts_launch.bat")
         with open(bat, "w", encoding="utf-8") as f:
@@ -371,11 +435,13 @@ class ReaderWin(QMainWindow):
         self._synth_pause = threading.Event(); self._synth_pause.set()
         self._sync_scroll = False
 
-        # Read server port from saved config
+        # Read server port and sample rate from saved config
         sv = self._c.get("server", {})
         if sv.get("port"):
             global SERVER_PORT
             SERVER_PORT = int(sv["port"])
+        self._sample_rate = SAMPLE_RATES.get(
+            "fish" if sv.get("model_type", "") == "Fish S2" else "qwen", 24000)
 
         self._build(); self._restore()
 
@@ -565,18 +631,31 @@ class ReaderWin(QMainWindow):
     # ── Server 启动 ──
     def _launch_server(self):
         sv = self._c.get("server", {})
-        if not sv.get("talker") or not sv.get("codec"):
-            QMessageBox.warning(self, "提示", "请先在「模型配置」中设置 talker.gguf 和 codec.gguf 路径")
-            return
-        exe = (sv.get("exe") or "").strip() or "tts_server.exe"
-        args = [exe,
-                "--model", sv["talker"], "--codec", sv["codec"],
-                "--port", sv.get("port", "9988"), "--lang", sv.get("lang", "auto")]
-        if sv.get("mode") == "CustomVoice":
-            if sv.get("cv_speaker"): args += ["--cv-speaker", sv["cv_speaker"]]
+        is_fish = (sv.get("model_type", "") == "Fish S2")
+        if is_fish:
+            if not sv.get("fish_model") or not sv.get("fish_tokenizer"):
+                QMessageBox.warning(self, "提示", "请先在「模型配置」中设置 Model.gguf 和 Tokenizer.json 路径")
+                return
         else:
-            if sv.get("ref_audio"): args += ["--ref-audio", sv["ref_audio"]]
-            if sv.get("ref_text"): args += ["--ref-text", sv["ref_text"]]
+            if not sv.get("talker") or not sv.get("codec"):
+                QMessageBox.warning(self, "提示", "请先在「模型配置」中设置 talker.gguf 和 codec.gguf 路径")
+                return
+        self._sample_rate = SAMPLE_RATES.get("fish" if is_fish else "qwen", 24000)
+        if is_fish:
+            args = [(sv.get("fish_exe") or "").strip() or "fish2_server.exe",
+                    "--model", sv["fish_model"], "--tokenizer", sv["fish_tokenizer"],
+                    "--port", sv.get("port", "9988")]
+            if sv.get("fish_ref_audio"): args += ["--ref-audio", sv["fish_ref_audio"]]
+            if sv.get("fish_ref_text"): args += ["--ref-text", sv["fish_ref_text"]]
+        else:
+            args = [(sv.get("exe") or "").strip() or "qwen3tts_server.exe",
+                    "--model", sv["talker"], "--codec", sv["codec"],
+                    "--port", sv.get("port", "9988"), "--lang", sv.get("lang", "auto")]
+            if sv.get("mode") == "CustomVoice":
+                if sv.get("cv_speaker"): args += ["--cv-speaker", sv["cv_speaker"]]
+            else:
+                if sv.get("ref_audio"): args += ["--ref-audio", sv["ref_audio"]]
+                if sv.get("ref_text"): args += ["--ref-text", sv["ref_text"]]
         bat = os.path.join(_FILE_DIR, "tts_launch.bat")
         if os.path.exists(bat):
             os.startfile(bat)
@@ -759,7 +838,7 @@ class ReaderWin(QMainWindow):
         pcm = np.frombuffer(r, dtype=np.int16).astype(np.float32) / 32767.0
         vol = self._sens_cfg.get("volume", 1.0)
         if vol != 1.0: pcm = np.clip(pcm * vol, -1, 1)
-        sd.play(pcm.astype(np.float32), SAMPLE_RATE)
+        sd.play(pcm.astype(np.float32), self._sample_rate)
         def _w():
             if not self._playing: sd.stop(); return
             try:
