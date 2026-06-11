@@ -398,7 +398,7 @@ class ServerDialog(QDialog):
 
         is_qwen = (sv["model_type"] == "Qwen3-TTS")
         if is_qwen:
-            exe = "qwen3tts_server.exe"
+            exe = (sv.get("exe") or "").strip() or "qwen3tts_server.exe"
             args = [exe, "--model", sv["talker"], "--codec", sv["codec"],
                     "--port", sv["port"], "--lang", sv["lang"]]
             if sv["mode"] == "CustomVoice":
