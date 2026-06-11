@@ -856,9 +856,9 @@ class ReaderWin(QMainWindow):
                     try:
                         pcm = TtsEngine.synth(txt, cfg.get("speed", 1.0))
                         if self._gid != gid: return
-                        pcm = np.clip(pcm, -1, 1) * 32767
+                        pcm = np.clip(pcm, -1, 1)
                         with self._wavs_lock:
-                            self._wavs[idx] = pcm.astype(np.int16).tobytes()
+                            self._wavs[idx] = pcm.astype(np.float32).tobytes()
                     except Exception as e:
                         with self._wavs_lock:
                             self._wavs[idx] = e
@@ -902,7 +902,7 @@ class ReaderWin(QMainWindow):
                     self._tx.ensureCursorVisible()
         print(f"[TTS {idx}/{self._total}] {self._sens[idx][:60]}")
         sd.stop()
-        pcm = np.frombuffer(r, dtype=np.int16).astype(np.float32) / 32767.0
+        pcm = np.frombuffer(r, dtype=np.float32)
         vol = self._sens_cfg.get("volume", 1.0)
         if vol != 1.0: pcm = np.clip(pcm * vol, -1, 1)
         sd.play(pcm.astype(np.float32), self._sample_rate)
