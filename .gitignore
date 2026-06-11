@@ -28,9 +28,10 @@ Backend/*.bat
 BackendServer/*.bat
 
 # Reader demo
-reader_demo/dll/
-reader_demo/venv/
-reader_demo/*.bat
+Reader_Demo/dll/
+Reader_Demo/venv/
+Reader_Demo/*.bat
+Reader_Demo/reader_config.json
 
 # OS
 .DS_Store
