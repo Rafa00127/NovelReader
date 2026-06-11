@@ -142,6 +142,12 @@ class ModelConfigDialog(QDialog):
         self._mode.currentTextChanged.connect(self._on_qwen_mode)
         ql.addLayout(r)
 
+        self._lang = QComboBox()
+        self._lang.addItems(["auto", "zh", "en", "ja", "ko"])
+        self._lang.setCurrentText(sv.get("lang", "auto"))
+        r = QHBoxLayout(); r.addWidget(QLabel("语言")); r.addWidget(self._lang)
+        ql.addLayout(r)
+
         self._qwen_base = QWidget()
         bl = QVBoxLayout(self._qwen_base); bl.setContentsMargins(0, 0, 0, 0)
         self._ref_audio = QLineEdit(sv.get("ref_audio", ""))
@@ -217,7 +223,8 @@ class ModelConfigDialog(QDialog):
             "port": self._port.text(),
             "exe": self._qwen_exe.text(), "talker": self._talker.text(),
             "codec": self._codec.text(),
-            "mode": self._mode.currentText(), "cv_speaker": self._cv_speaker.text(),
+            "mode": self._mode.currentText(), "lang": self._lang.currentText(),
+            "cv_speaker": self._cv_speaker.text(),
             "ref_audio": self._ref_audio.text(), "ref_text": self._ref_text.text(),
             "fish_exe": self._fish_exe.text(), "fish_model": self._fish_model.text(),
             "fish_tokenizer": self._fish_tokenizer.text(),
