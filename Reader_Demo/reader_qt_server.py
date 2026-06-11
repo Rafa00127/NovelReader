@@ -423,8 +423,35 @@ class ServerDialog(QDialog):
         if prev_type and prev_type != new_type:
             self._status.setText("Server 已启动。⚠ 模型类型已变更，请重启阅读器。")
         else:
-            self._status.setText("Server 已在新窗口启动，关闭窗口即停止。")
-        self._status.setStyleSheet("color:#0a0;")
+            self._status.setText("Server 启动中...")
+        self._status.setStyleSheet("color:#fa0;")
+        port = int(sv.get("port", "9988"))
+
+        def _poll():
+            for _ in range(20):
+                time.sleep(0.5)
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(1)
+                    s.connect((SERVER_HOST, port))
+                    s.close()
+                    QMetaObject.invokeMethod(
+                        self._status, "setText", Qt.ConnectionType.QueuedConnection,
+                        Q_ARG(str, f"Server: {SERVER_HOST}:{port}"))
+                    QMetaObject.invokeMethod(
+                        self._status, "setStyleSheet", Qt.ConnectionType.QueuedConnection,
+                        Q_ARG(str, "color:#0a0;"))
+                    return
+                except (ConnectionRefusedError, socket.timeout, OSError):
+                    continue
+            QMetaObject.invokeMethod(
+                self._status, "setText", Qt.ConnectionType.QueuedConnection,
+                Q_ARG(str, "Server 超时"))
+            QMetaObject.invokeMethod(
+                self._status, "setStyleSheet", Qt.ConnectionType.QueuedConnection,
+                Q_ARG(str, "color:#f00;"))
+
+        threading.Thread(target=_poll, daemon=True).start()
 
 
 # ═══════════ 主窗口 ═══════════
