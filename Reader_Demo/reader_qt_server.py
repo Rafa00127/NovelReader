@@ -635,15 +635,31 @@ class ReaderWin(QMainWindow):
 
     # ── Server 启动 ──
     def _launch_server(self):
+        bat = os.path.join(_FILE_DIR, "tts_launch.bat")
+        if not os.path.exists(bat):
+            QMessageBox.warning(self, "提示", "请先在「模型配置」中设置并启动一次 Server")
+            return
+        os.startfile(bat)
         sv = self._c.get("server", {})
         self._sample_rate = SAMPLE_RATES.get(
             "fish" if sv.get("model_type", "") == "Fish S2" else "qwen", 24000)
-        bat = os.path.join(_FILE_DIR, "tts_launch.bat")
-        if os.path.exists(bat):
-            os.startfile(bat)
-            self._ml.setText("Server 启动中..."); self._ml.setStyleSheet("color:#fa0;")
-        else:
-            QMessageBox.warning(self, "提示", "请先在「模型配置」中设置并启动一次 Server")
+        self._ml.setText("Server 启动中..."); self._ml.setStyleSheet("color:#fa0;")
+        port = int(sv.get("port", SERVER_PORT))
+
+        def _poll(remaining):
+            if remaining <= 0:
+                self._ml.setText("Server 超时未响应"); self._ml.setStyleSheet("color:#f00;")
+                return
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(1)
+                s.connect((SERVER_HOST, port))
+                s.close()
+                self._ml.setText(f"Server: {SERVER_HOST}:{port}"); self._ml.setStyleSheet("color:#0a0;")
+            except (ConnectionRefusedError, socket.timeout, OSError):
+                QTimer.singleShot(500, lambda: _poll(remaining - 1))
+
+        QTimer.singleShot(500, lambda: _poll(20))
 
     # ── 播放 ──
     def _tp(self):
