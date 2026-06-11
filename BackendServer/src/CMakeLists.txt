@@ -1,6 +1,6 @@
 # ===========================================================================
 # Server-only build — no DLL, no standalone_codec, no tests.
-# Produces: tts_server.exe (statically links qwen3_tts + crispasr-core)
+# Produces: qwen3tts_server.exe (statically links qwen3_tts + crispasr-core)
 # ===========================================================================
 
 # --- crispasr-core ---------------------------------------------------------
@@ -36,15 +36,15 @@ if(NOT MSVC)
     target_compile_options(qwen3_tts PRIVATE -O3)
 endif()
 
-# --- tts_server ---------------------------------------------------------------
-add_executable(tts_server ../tts_server.cpp)
-target_compile_definitions(tts_server PRIVATE _CRT_SECURE_NO_WARNINGS)
-target_include_directories(tts_server PRIVATE . ../include ../ggml/src)
-target_compile_features(tts_server PRIVATE cxx_std_17)
-target_link_libraries(tts_server PRIVATE qwen3_tts crispasr-core ggml ggml-base ggml-cpu)
+# --- qwen3tts_server ----------------------------------------------------------
+add_executable(qwen3tts_server qwen3tts_server.cpp)
+target_compile_definitions(qwen3tts_server PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_include_directories(qwen3tts_server PRIVATE . ../include ../ggml/src)
+target_compile_features(qwen3tts_server PRIVATE cxx_std_17)
+target_link_libraries(qwen3tts_server PRIVATE qwen3_tts crispasr-core ggml ggml-base ggml-cpu)
 if(TARGET ggml-hip)
-    target_link_libraries(tts_server PRIVATE ggml-hip)
+    target_link_libraries(qwen3tts_server PRIVATE ggml-hip)
 endif()
 if(NOT MSVC)
-    target_compile_options(tts_server PRIVATE -O3)
+    target_compile_options(qwen3tts_server PRIVATE -O3)
 endif()

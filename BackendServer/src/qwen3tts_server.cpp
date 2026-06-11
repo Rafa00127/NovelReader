@@ -1,9 +1,9 @@
-// tts_server.cpp — Simple TCP TTS server for CrispASR.
+// qwen3tts_server.cpp — Simple TCP TTS server for CrispASR.
 // Loads talker+codec once, GPU-resident, serializes synthesis via mutex.
 // Protocol: client sends 4-byte big-endian text_len + UTF-8 text, server replies
 //           4-byte big-endian n_samples + float32 PCM.
-// Compile: add_executable(tts_server tts_server.cpp)
-//          target_link_libraries(tts_server qwen3_tts crispasr-core ggml ggml-base ggml-cpu)
+// Compile: add_executable(qwen3tts_server qwen3tts_server.cpp)
+//          target_link_libraries(qwen3tts_server qwen3_tts crispasr-core ggml ggml-base ggml-cpu)
 //          + ggml-hip if HIP build.
 
 #include "qwen3_tts.h"
@@ -51,7 +51,7 @@ static std::atomic<bool>         g_running{true};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 static void die(const char* msg) {
-    fprintf(stderr, "[tts_server] FATAL: %s\n", msg);
+    fprintf(stderr, "[qwen3tts_server] FATAL: %s\n", msg);
     exit(1);
 }
 
@@ -74,11 +74,11 @@ static bool load_model() {
 
     g_ctx = qwen3_tts_init_from_file(g_talker_path, cp);
     if (!g_ctx) {
-        fprintf(stderr, "[tts_server] failed to load talker: %s\n", g_talker_path);
+        fprintf(stderr, "[qwen3tts_server] failed to load talker: %s\n", g_talker_path);
         return false;
     }
     if (qwen3_tts_set_codec_path(g_ctx, g_codec_path) != 0) {
-        fprintf(stderr, "[tts_server] failed to load codec: %s\n", g_codec_path);
+        fprintf(stderr, "[qwen3tts_server] failed to load codec: %s\n", g_codec_path);
         qwen3_tts_free(g_ctx);
         g_ctx = nullptr;
         return false;
@@ -100,19 +100,19 @@ static bool load_model() {
                                   g_text_lang == "ja" || g_text_lang == "japanese" ? 2058 :
                                   g_text_lang == "ko" || g_text_lang == "korean" ? 2064 : -1);
 
-    fprintf(stderr, "[tts_server] model loaded: %s + %s\n", g_talker_path, g_codec_path);
+    fprintf(stderr, "[qwen3tts_server] model loaded: %s + %s\n", g_talker_path, g_codec_path);
     return true;
 }
 
 static bool synth_one(const char* text, std::vector<float>& pcm) {
     int n_samples = 0;
     float* raw = nullptr;
-    fprintf(stderr, "[tts_server] synth: '%s'\n", text); fflush(stderr);
+    fprintf(stderr, "[qwen3tts_server] synth: '%s'\n", text); fflush(stderr);
     {
         std::lock_guard<std::mutex> lock(g_mutex);
-        fprintf(stderr, "[tts_server] calling qwen3_tts_synthesize...\n"); fflush(stderr);
+        fprintf(stderr, "[qwen3tts_server] calling qwen3_tts_synthesize...\n"); fflush(stderr);
         raw = qwen3_tts_synthesize(g_ctx, text, &n_samples);
-        fprintf(stderr, "[tts_server] synthesize returned raw=%p n_samples=%d\n", (void*)raw, n_samples); fflush(stderr);
+        fprintf(stderr, "[qwen3tts_server] synthesize returned raw=%p n_samples=%d\n", (void*)raw, n_samples); fflush(stderr);
         // qwen3_tts_sync(g_ctx);  // drain GPU command queue before next synthesis
     }
     if (!raw || n_samples <= 0) return false;
@@ -133,12 +133,12 @@ static void handle_client(SOCKET client_fd) {
     nr = recv(client_fd, &text[0], text_len, MSG_WAITALL);
     if (nr != text_len) { closesocket(client_fd); return; }
 
-    fprintf(stderr, "[tts_server] received text: '%s' (%d bytes)\n", text.c_str(), text_len); fflush(stderr);
+    fprintf(stderr, "[qwen3tts_server] received text: '%s' (%d bytes)\n", text.c_str(), text_len); fflush(stderr);
 
     // Synthesize
     std::vector<float> pcm;
     if (!synth_one(text.c_str(), pcm)) {
-        fprintf(stderr, "[tts_server] synth_one failed\n"); fflush(stderr);
+        fprintf(stderr, "[qwen3tts_server] synth_one failed\n"); fflush(stderr);
         int32_t err = htonl(-1);
         send_all(client_fd, (const char*)&err, 4);
         closesocket(client_fd);
@@ -175,7 +175,7 @@ static void server_loop() {
     if (listen(listen_fd, 8) == SOCKET_ERROR)
         die("listen() failed");
 
-    fprintf(stderr, "[tts_server] listening on 127.0.0.1:%d\n", g_port);
+    fprintf(stderr, "[qwen3tts_server] listening on 127.0.0.1:%d\n", g_port);
 
     while (g_running) {
         SOCKET client = accept(listen_fd, nullptr, nullptr);
@@ -212,7 +212,7 @@ int main(int argc, char** argv) {
     }
 
     if (!g_talker_path || !g_codec_path) {
-        fprintf(stderr, "usage: tts_server --model <talker.gguf> --codec <codec.gguf> [--port 9988] \\\n"
+        fprintf(stderr, "usage: qwen3tts_server --model <talker.gguf> --codec <codec.gguf> [--port 9988] \\\n"
                         "                   [--ref-audio <wav> --ref-text <text>] [--cv-speaker <name>] \\\n"
                         "                   [--lang auto|zh|en|ja|ko] [--xvec-only]\n");
         return 1;
