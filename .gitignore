@@ -32,6 +32,7 @@ Reader_Demo/dll/
 Reader_Demo/venv/
 Reader_Demo/*.bat
 Reader_Demo/reader_config.json
+Reader_Demo/tts_gui_config.json
 
 # OS
 .DS_Store

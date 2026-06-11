@@ -646,20 +646,31 @@ class ReaderWin(QMainWindow):
         self._ml.setText("Server 启动中..."); self._ml.setStyleSheet("color:#fa0;")
         port = int(sv.get("port", SERVER_PORT))
 
-        def _poll(remaining):
-            if remaining <= 0:
-                self._ml.setText("Server 超时未响应"); self._ml.setStyleSheet("color:#f00;")
-                return
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(1)
-                s.connect((SERVER_HOST, port))
-                s.close()
-                self._ml.setText(f"Server: {SERVER_HOST}:{port}"); self._ml.setStyleSheet("color:#0a0;")
-            except (ConnectionRefusedError, socket.timeout, OSError):
-                QTimer.singleShot(500, lambda: _poll(remaining - 1))
+        def _poll():
+            for _ in range(20):
+                time.sleep(0.5)
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(1)
+                    s.connect((SERVER_HOST, port))
+                    s.close()
+                    QMetaObject.invokeMethod(
+                        self._ml, "setText", Qt.ConnectionType.QueuedConnection,
+                        Q_ARG(str, f"Server: {SERVER_HOST}:{port}"))
+                    QMetaObject.invokeMethod(
+                        self._ml, "setStyleSheet", Qt.ConnectionType.QueuedConnection,
+                        Q_ARG(str, "color:#0a0;"))
+                    return
+                except (ConnectionRefusedError, socket.timeout, OSError):
+                    continue
+            QMetaObject.invokeMethod(
+                self._ml, "setText", Qt.ConnectionType.QueuedConnection,
+                Q_ARG(str, "Server 超时未响应"))
+            QMetaObject.invokeMethod(
+                self._ml, "setStyleSheet", Qt.ConnectionType.QueuedConnection,
+                Q_ARG(str, "color:#f00;"))
 
-        QTimer.singleShot(500, lambda: _poll(20))
+        threading.Thread(target=_poll, daemon=True).start()
 
     # ── 播放 ──
     def _tp(self):
