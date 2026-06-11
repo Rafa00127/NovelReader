@@ -393,6 +393,7 @@ class ServerDialog(QDialog):
             "cv_speaker": self._cv_spk.text(),
             "lang": self._lang.currentText(),
         }
+        prev_type = self._c.get("server", {}).get("model_type", "")
         self._c["server"] = sv
         save_cfg(self._c)
 
@@ -418,7 +419,11 @@ class ServerDialog(QDialog):
         with open(bat, "w", encoding="utf-8") as f:
             f.write(f"@echo off\r\nchcp 65001 >nul\r\nset QWEN3_TTS_CODEC_GPU=1\r\n{cmd_line}\r\npause\r\n")
         os.startfile(bat)
-        self._status.setText("Server 已在新窗口启动，关闭窗口即停止。")
+        new_type = sv["model_type"]
+        if prev_type and prev_type != new_type:
+            self._status.setText("Server 已启动。⚠ 模型类型已变更，请重启阅读器。")
+        else:
+            self._status.setText("Server 已在新窗口启动，关闭窗口即停止。")
         self._status.setStyleSheet("color:#0a0;")
 
 
