@@ -631,31 +631,8 @@ class ReaderWin(QMainWindow):
     # ── Server 启动 ──
     def _launch_server(self):
         sv = self._c.get("server", {})
-        is_fish = (sv.get("model_type", "") == "Fish S2")
-        if is_fish:
-            if not sv.get("fish_model") or not sv.get("fish_tokenizer"):
-                QMessageBox.warning(self, "提示", "请先在「模型配置」中设置 Model.gguf 和 Tokenizer.json 路径")
-                return
-        else:
-            if not sv.get("talker") or not sv.get("codec"):
-                QMessageBox.warning(self, "提示", "请先在「模型配置」中设置 talker.gguf 和 codec.gguf 路径")
-                return
-        self._sample_rate = SAMPLE_RATES.get("fish" if is_fish else "qwen", 24000)
-        if is_fish:
-            args = [(sv.get("fish_exe") or "").strip() or "fish2_server.exe",
-                    "--model", sv["fish_model"], "--tokenizer", sv["fish_tokenizer"],
-                    "--port", sv.get("port", "9988")]
-            if sv.get("fish_ref_audio"): args += ["--ref-audio", sv["fish_ref_audio"]]
-            if sv.get("fish_ref_text"): args += ["--ref-text", sv["fish_ref_text"]]
-        else:
-            args = [(sv.get("exe") or "").strip() or "qwen3tts_server.exe",
-                    "--model", sv["talker"], "--codec", sv["codec"],
-                    "--port", sv.get("port", "9988"), "--lang", sv.get("lang", "auto")]
-            if sv.get("mode") == "CustomVoice":
-                if sv.get("cv_speaker"): args += ["--cv-speaker", sv["cv_speaker"]]
-            else:
-                if sv.get("ref_audio"): args += ["--ref-audio", sv["ref_audio"]]
-                if sv.get("ref_text"): args += ["--ref-text", sv["ref_text"]]
+        self._sample_rate = SAMPLE_RATES.get(
+            "fish" if sv.get("model_type", "") == "Fish S2" else "qwen", 24000)
         bat = os.path.join(_FILE_DIR, "tts_launch.bat")
         if os.path.exists(bat):
             os.startfile(bat)
