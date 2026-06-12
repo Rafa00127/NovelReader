@@ -194,6 +194,8 @@ class BridgeWin(QMainWindow):
         self._playback_id = 0; self._speed = 1.0; self._volume = self._c.get("volume", 1.0)
         self._synth_pause = threading.Event(); self._synth_pause.set()
         self._paused_id = 0; self._paused_idx = 0; self._paused_total = 0
+        self._pause_keep_synth = self._c.get("pause_keep_synth", False)
+        self._auto_play = self._c.get("auto_play", False)
         self._http_server = None; self._http_thread = None
         self._signals = BridgeSignals()
 
@@ -227,6 +229,14 @@ class BridgeWin(QMainWindow):
         fs = self._c.get("font_size", 23); self._fs.setValue(fs); self._fs.setFixedWidth(80)
         self._fs.valueChanged.connect(self._on_font); tb.addWidget(self._fs)
         tb.addWidget(QLabel("A+"))
+        self._keep_btn = QCheckBox("暂停时后台合成")
+        self._keep_btn.setChecked(self._pause_keep_synth)
+        self._keep_btn.toggled.connect(self._on_keep_synth)
+        tb.addWidget(self._keep_btn)
+        self._auto_btn = QCheckBox("收到即读")
+        self._auto_btn.setChecked(self._auto_play)
+        self._auto_btn.toggled.connect(self._on_auto_play)
+        tb.addWidget(self._auto_btn)
         full_btn = QPushButton("⛶ 全屏")
         full_btn.clicked.connect(self._fullscreen)
         tb.addWidget(full_btn)
@@ -427,6 +437,9 @@ class BridgeWin(QMainWindow):
         self._status_lbl.setText(f"已接收: {title} ({len(text)}字, {self._total}句)")
         self._status_lbl.setStyleSheet("color:#0a0; padding: 4px;")
 
+        if self._auto_play and self._total > 0:
+            self._start_playback(0)
+
     def _on_status_msg(self, msg, color):
         self._status_lbl.setText(msg)
         self._status_lbl.setStyleSheet(f"color:{color}; padding: 4px;")
@@ -521,7 +534,8 @@ class BridgeWin(QMainWindow):
 
         def _synth_worker():
             for idx in range(start_idx, self._total):
-                self._synth_pause.wait()  # 暂停时在此阻塞，不发请求
+                if not self._pause_keep_synth:
+                    self._synth_pause.wait()  # 暂停时阻塞，不发请求
                 if self._playback_id != pid:
                     return
                 try:
@@ -672,6 +686,19 @@ class BridgeWin(QMainWindow):
     def _on_font(self, v):
         f = self._tx.font(); f.setPixelSize(v); self._tx.setFont(f)
         self._c["font_size"] = v
+        save_cfg(self._c)
+
+    def _on_keep_synth(self, v):
+        self._pause_keep_synth = v
+        self._c["pause_keep_synth"] = v
+        save_cfg(self._c)
+        # 如果当前在暂停中且刚打开此开关，解锁合成线程
+        if v and self._paused:
+            self._synth_pause.set()
+
+    def _on_auto_play(self, v):
+        self._auto_play = v
+        self._c["auto_play"] = v
         save_cfg(self._c)
 
     def _fullscreen(self):
