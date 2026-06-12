@@ -3613,7 +3613,9 @@ static ggml_cgraph* build_graph_codec_decode(qwen3_tts_context* c, int T) {
     // ── Step 6: Final conv and clamp ────────────────────────────────────────
     h = codec_snake_beta(ctx0, h, codec.out_snake_a, codec.out_snake_b);
     h = codec_causal_conv1d(ctx0, h, codec.out_conv_w, codec.out_conv_b, 1, 1); // [1, 1920T]
-    h = ggml_clamp(ctx0, h, -1.0f, 1.0f);
+    // No output clamp — matches PyTorch BigVGAN reference which leaves the
+    // waveform unclamped. Clipping normal overshoots (~±1.05–1.15) causes
+    // audible low-fi harshness from hard-clipping harmonics.
 
     // Reshape to 1D [1920T]
     const int T_pcm = (int)h->ne[0] * (int)h->ne[1];
