@@ -524,6 +524,7 @@ class ReaderWin(QMainWindow):
         self._hist.currentIndexChanged.connect(self._on_hist)
         tb.addWidget(self._hist)
         b = QPushButton("📜 历史"); b.clicked.connect(self._hist_dlg); tb.addWidget(b)
+        b = QPushButton("🌐 读网络小说"); b.clicked.connect(self._open_bridge); tb.addWidget(b)
         b = QPushButton("⛶ 全屏"); b.clicked.connect(self._fullscreen); tb.addWidget(b)
         b = QPushButton("💾 保存退出"); b.clicked.connect(self._save_quit); tb.addWidget(b)
 
@@ -952,6 +953,16 @@ class ReaderWin(QMainWindow):
         k, v = bs[0]
         if not os.path.exists(k): self._refresh_hist(); return
         self._load_book(k)
+
+    def _open_bridge(self):
+        for name in ("bridge_reader_gui.py", "bridge_reader_gui.exe"):
+            path = os.path.join(_FILE_DIR, name)
+            if os.path.exists(path):
+                self._sv(); sd.stop(); save_cfg(self._c)
+                os.startfile(path)
+                QApplication.quit()
+                return
+        QMessageBox.warning(self, "提示", "未找到 bridge_reader_gui.py 或 bridge_reader_gui.exe")
 
     def _save_quit(self):
         self._sv(); sd.stop(); save_cfg(self._c); QApplication.quit()
