@@ -552,7 +552,7 @@ class BridgeWin(QMainWindow):
             result = self._wavs.get(self._current_idx)
 
         if result is None:
-            QTimer.singleShot(100, self._play_next)
+            QTimer.singleShot(200, self._play_next)
             return
 
         if isinstance(result, Exception):
