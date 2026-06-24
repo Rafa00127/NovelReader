@@ -1093,7 +1093,7 @@ ggml_cgraph* build_graph_code_pred_kv(qwen3_tts_context* c, int n_past, int n_to
     }
 
     const core_attn::KvSelfAttnParams kvp = {
-        n_q, n_kv, hd, n_kv_grp, (int)hp.max_pos, theta, 32.0f, 1.0f, attn_scale, eps, core_attn::GQA_MANUAL_CONT,
+        n_q, n_kv, hd, n_kv_grp, (int)hp.max_pos, theta, 32.0f, 1.0f, attn_scale, eps, core_attn::GQA_NATIVE,
     };
 
     ggml_tensor* cur = embeds;
@@ -1227,7 +1227,7 @@ ggml_cgraph* build_graph_talker_kv(qwen3_tts_context* c, int n_past, int n_token
         /*rope_beta_slow*/ 1.0f,
         /*attn_scale*/ attn_scale,
         /*qk_norm_eps*/ eps,
-        /*gqa_mode*/ core_attn::GQA_MANUAL_CONT,
+        /*gqa_mode*/ core_attn::GQA_NATIVE,
     };
 
     // Bucketed mode: pin K/V cache write index to runtime `positions` (via
@@ -6224,6 +6224,34 @@ extern "C" void qwen3_tts_codes_free(int32_t* codes) {
     free(codes);
 }
 
+// Free the length-dependent scratch compute buffers after each request so the
+// VRAM/RAM high-water-mark doesn't persist across requests. The codec's
+// codec_sched_gpu galloc buffer grows with sequence length (T_gen frames) and
+// was only freed at qwen3_tts_free. The main sched (talker/prefill/embed)
+// grows with Lk up to kv_max_ctx=4096. Both are pure scratch schedulers
+// (reset+alloc+compute per graph, no cached graph attached).
+static void qwen3_tts_reset_scratch_sched(qwen3_tts_context* c) {
+    if (!c)
+        return;
+    // Codec-decode scheduler (lazy-created in codec_pick_sched): free + nullptr
+    // so it's re-created fresh (small) on the next decode call.
+    if (c->codec_sched_gpu) {
+        ggml_backend_sched_free(c->codec_sched_gpu);
+        c->codec_sched_gpu = nullptr;
+    }
+    // Talker/prefill/embed scratch sched: not lazy → re-create with same
+    // backend list as at creation (qwen3_tts.cpp init: {backend, backend_cpu}).
+    if (c->sched) {
+        ggml_backend_sched_free(c->sched);
+        int n_be = 0;
+        ggml_backend_t backends[2];
+        backends[n_be++] = c->backend;
+        if (c->backend_cpu && c->backend_cpu != c->backend)
+            backends[n_be++] = c->backend_cpu;
+        c->sched = ggml_backend_sched_new(backends, nullptr, n_be, 16384, false, false);
+    }
+}
+
 extern "C" float* qwen3_tts_decode_codes(struct qwen3_tts_context* ctx, const int32_t* codes, int n_codes,
                                          int* out_n_samples) {
     if (out_n_samples) {
@@ -6410,6 +6438,9 @@ extern "C" float* qwen3_tts_synthesize(struct qwen3_tts_context* ctx, const char
                         "audio=%.1f s  rtf=%.3f\n",
                 code_ms, codec_ms, total_ms, dur, (total_ms / 1000.0) / dur);
     }
+    // Free the scratch compute buffers so the length-dependent galloc
+    // high-water-mark doesn't persist across requests (issue #183).
+    qwen3_tts_reset_scratch_sched(ctx);
     return pcm;
 }
 
