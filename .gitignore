@@ -23,9 +23,14 @@ CMakeFiles/
 .vscode/
 .idea/
 
+#agent
+.crush/
+AGENTS.md
+.cache/
 # Backend
 Backend/*.bat
 BackendServer/*.bat
+BackendServer/patches/
 
 # Reader demo
 Reader_Demo/dll/
@@ -33,6 +38,7 @@ Reader_Demo/venv/
 Reader_Demo/*.bat
 Reader_Demo/reader_config.json
 Reader_Demo/tts_gui_config.json
+Reader_Demo/*.wav
 
 # OS
 .DS_Store

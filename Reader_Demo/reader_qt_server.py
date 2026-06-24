@@ -25,6 +25,8 @@ CHAPTER_RE = [
     re.compile(r'^[一二三四五六七八九十百千万]+、'),
 ]
 
+## ═══════════ 语速调整 (disabled — no artifact-free solution on client) ═══════════
+
 # ═══════════ 响度归一化 ═══════════
 
 _LOUDNORM_REF = -18.0  # LUFS
@@ -63,7 +65,7 @@ QMainWindow, QWidget { background-color: #111; color: #ddd; }
 QPlainTextEdit, QTextEdit {
     background-color: #1a1a18; color: #c8b878; border: none;
     padding: 30px 50px; line-height: 1.8;
-    selection-background-color: #3a3520;
+    selection-background-color: #2a2518; selection-color: #c8b878;
 }
 QListWidget {
     background-color: #1a1a1a; color: #ccc; border: none;
@@ -177,6 +179,12 @@ def split_text(text):
     return final
 
 
+# ═══════════ 自适应按钮 ═══════════
+
+class ResponsiveButton(QPushButton):
+    def minimumSizeHint(self):
+        return QSize(0, super().minimumSizeHint().height())
+
 # ═══════════ TTS 引擎 (TCP Server 封装) ═══════════
 
 class TtsEngine:
@@ -198,7 +206,7 @@ class TtsEngine:
         return data
 
     @classmethod
-    def synth(cls, text, speed=1.0):
+    def synth(cls, text):
         """Send text to server, return float32 PCM array. Raises on error."""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -231,12 +239,7 @@ class TtsEngine:
             if len(arr) != n_samples:
                 raise RuntimeError(f"Truncated PCM: got {len(arr)}, expected {n_samples}")
 
-            # Speed change
-            if speed != 1.0 and speed > 0.1:
-                old_len = len(arr)
-                new_len = int(old_len / speed)
-                arr = np.interp(np.linspace(0, old_len - 1, new_len),
-                                np.arange(old_len), arr).astype(np.float32)
+            ## speed disabled
             return arr
 
         except ConnectionRefusedError:
@@ -254,12 +257,13 @@ class SettingsDialog(QDialog):
         self.setStyleSheet(QSS)
         lay = QVBoxLayout(self); lay.setSpacing(10)
 
-        row = QHBoxLayout(); row.addWidget(QLabel("语速"))
-        self._sp = QSlider(Qt.Orientation.Horizontal); self._sp.setRange(50, 200)
-        self._sp.setValue(int(cfg.get("speed", 1.0) * 100))
-        self._sp_lbl = QLabel(f"{cfg.get('speed', 1.0):.1f}x")
-        self._sp.valueChanged.connect(lambda v: self._sp_lbl.setText(f"{v / 100:.1f}x"))
-        row.addWidget(self._sp); row.addWidget(self._sp_lbl); lay.addLayout(row)
+        ## speed UI disabled
+        ## row = QHBoxLayout(); row.addWidget(QLabel("语速"))
+        ## self._sp = QSlider(Qt.Orientation.Horizontal); self._sp.setRange(50, 200)
+        ## self._sp.setValue(int(cfg.get("speed", 1.0) * 100))
+        ## self._sp_lbl = QLabel(f"{cfg.get('speed', 1.0):.1f}x")
+        ## self._sp.valueChanged.connect(lambda v: self._sp_lbl.setText(f"{v / 100:.1f}x"))
+        ## row.addWidget(self._sp); row.addWidget(self._sp_lbl); lay.addLayout(row)
 
         row = QHBoxLayout(); row.addWidget(QLabel("音量"))
         self._vo = QSlider(Qt.Orientation.Horizontal); self._vo.setRange(0, 150)
@@ -271,7 +275,7 @@ class SettingsDialog(QDialog):
         save = QPushButton("保存设置"); save.clicked.connect(self._sv); lay.addWidget(save)
 
     def _sv(self):
-        self._c["speed"] = self._sp.value() / 100
+        ## self._c["speed"] = self._sp.value() / 100  # speed disabled
         self._c["volume"] = self._vo.value() / 100
         save_cfg(self._c); self.accept()
 
@@ -328,6 +332,10 @@ class ServerDialog(QDialog):
         b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._fish_ra)); r.addWidget(b); fl.addLayout(r)
         self._fish_rt = QLineEdit(sv.get("fish_ref_text", ""))
         r = QHBoxLayout(); r.addWidget(QLabel("参考文本")); r.addWidget(self._fish_rt)
+        fl.addLayout(r)
+        self._fish_tag = QLineEdit(sv.get("fish_tag", ""))
+        self._fish_tag.setPlaceholderText("e.g. [professional broadcast tone]")
+        r = QHBoxLayout(); r.addWidget(QLabel("Tag")); r.addWidget(self._fish_tag)
         fl.addLayout(r)
         lay.addWidget(self._fish_box)
 
@@ -423,6 +431,7 @@ class ServerDialog(QDialog):
             "ref_text": self._rt.text(),
             "cv_speaker": self._cv_spk.text(),
             "lang": self._lang.currentText(),
+            "fish_tag": self._fish_tag.text(),
         }
         prev_type = self._c.get("server", {}).get("model_type", "")
         self._c["server"] = sv
@@ -490,7 +499,7 @@ class ServerDialog(QDialog):
 class ReaderWin(QMainWindow):
     def __init__(self):
         super().__init__(); self.setWindowTitle("小说朗读器 — TTS Server")
-        self.resize(1280, 900); self.setStyleSheet(QSS)
+        self.resize(1000, 500); self.setStyleSheet(QSS)
         self._c = load_cfg(); self._chs = []; self._bp = ""; self._ci = 0; self._pi = 0
         self._playing = False
         self._nxt = 0; self._total = 0; self._save_sent = 0; self._gid = 0
@@ -508,37 +517,64 @@ class ReaderWin(QMainWindow):
 
         self._build(); self._restore()
 
+    def _tool_btn(self, icon, text, tooltip, func):
+        """Create a button that auto-collapses to icon-only when space is tight."""
+        b = ResponsiveButton(f"{icon} {text}")
+        b.setToolTip(tooltip); b.setStyleSheet("padding:4px 6px;")
+        b.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        b.clicked.connect(func)
+        b._icon = icon; b._text = text
+        self._collapse_btns.append(b)
+        return b
+
+    def _adapt_toolbar(self):
+        wide = self.width() >= 950
+        for b in self._collapse_btns:
+            if wide: b.setText(f"{b._icon} {b._text}")
+            else: b.setText(b._icon)
+
     def _build(self):
         cw = QWidget(); self.setCentralWidget(cw)
         lay = QVBoxLayout(cw); lay.setContentsMargins(10, 8, 10, 6); lay.setSpacing(6)
 
+        self._collapse_btns = []
+
         # ── 工具栏 ──
-        tb = QHBoxLayout()
-        for t, f in [("📂 打开", self._ob),
-                     ("🔧 模型配置", lambda: ServerDialog(self, self._c).exec()),
-                     ("🚀 启动", self._launch_server),
-                     ("⚙ 设置", lambda: SettingsDialog(self, self._c).exec())]:
-            b = QPushButton(t); b.clicked.connect(f); tb.addWidget(b)
+        tb = QHBoxLayout(); tb.setSpacing(3)
+        tb.addWidget(self._tool_btn("📂", "打开", "打开", self._ob))
+        tb.addWidget(self._tool_btn("🔧", "模型配置", "模型配置",
+                     lambda: ServerDialog(self, self._c).exec()))
+        tb.addWidget(self._tool_btn("🚀", "启动", "启动 Server", self._launch_server))
+        tb.addWidget(self._tool_btn("⚙", "设置", "设置", self._settings))
+        tb.addWidget(self._tool_btn("📜", "历史", "历史", self._hist_dlg))
+        tb.addWidget(self._tool_btn("🌐", "读网络小说", "读网络小说", self._open_bridge))
+        tb.addWidget(self._tool_btn("⛶", "全屏", "全屏", self._fullscreen))
+        tb.addWidget(self._tool_btn("💾", "保存退出", "保存退出", self._save_quit))
 
-        self._hist = QComboBox(); self._hist.setMinimumWidth(140)
-        self._hist.currentIndexChanged.connect(self._on_hist)
-        tb.addWidget(self._hist)
-        b = QPushButton("📜 历史"); b.clicked.connect(self._hist_dlg); tb.addWidget(b)
-        b = QPushButton("🌐 读网络小说"); b.clicked.connect(self._open_bridge); tb.addWidget(b)
-        b = QPushButton("⛶ 全屏"); b.clicked.connect(self._fullscreen); tb.addWidget(b)
-        b = QPushButton("💾 保存退出"); b.clicked.connect(self._save_quit); tb.addWidget(b)
-
-        tb.addWidget(QLabel(" A-"))
+        tb.addWidget(QLabel("A-"))
         self._fs = QSlider(Qt.Orientation.Horizontal); self._fs.setRange(8, 64)
-        self._fs.setValue(23); self._fs.setFixedWidth(80)
+        self._fs.setValue(23); self._fs.setFixedWidth(64)
         self._fs.valueChanged.connect(self._on_font); tb.addWidget(self._fs)
         tb.addWidget(QLabel("A+"))
 
+        tb.addWidget(QLabel("🔈"))
+        self._vol = QSlider(Qt.Orientation.Horizontal); self._vol.setRange(0, 150)
+        self._vol.setValue(int(self._c.get("volume", 1.0) * 100))
+        self._vol.setFixedWidth(64)
+        self._vol.valueChanged.connect(self._on_vol)
+        tb.addWidget(self._vol)
+        self._vol_lbl = QLabel(f"{int(self._c.get('volume', 1.0) * 100)}%")
+        tb.addWidget(self._vol_lbl)
+
         tb.addStretch()
-        self._chap_btn = QPushButton("📑 目录"); self._chap_btn.clicked.connect(self._toggle_chap)
+        self._chap_btn = self._tool_btn("📑", "目录", "目录", self._toggle_chap)
         tb.addWidget(self._chap_btn)
-        self._ml = QLabel(f"Server: 127.0.0.1:{SERVER_PORT}"); self._ml.setStyleSheet("color:#0a0;"); tb.addWidget(self._ml)
+        self._ml = QLabel(f"127.0.0.1:{SERVER_PORT}")
+        self._ml.setStyleSheet("color:#0a0;"); tb.addWidget(self._ml)
         lay.addLayout(tb)
+
+        self._adapt_toolbar()
+        self.setMinimumSize(0, 0)
 
         # ── 正文 ──
         self._tx = QPlainTextEdit(); self._tx.setReadOnly(True)
@@ -571,7 +607,11 @@ class ReaderWin(QMainWindow):
         bb.addStretch()
         self._sync_btn = QPushButton("⟳ 同步滚动"); self._sync_btn.setCheckable(True)
         self._sync_btn.setFixedWidth(100)
-        self._sync_btn.toggled.connect(lambda v: setattr(self, '_sync_scroll', v)); bb.addWidget(self._sync_btn)
+        def _sync_toggled(v):
+            self._sync_scroll = v
+            if v: self._sync_btn.setStyleSheet("background:#3a5a3a; color:#fff; border:1px solid #5a8a5a; border-radius:6px; padding:8px 16px; font-size:13px;")
+            else: self._sync_btn.setStyleSheet("")
+        self._sync_btn.toggled.connect(_sync_toggled); bb.addWidget(self._sync_btn)
         self._loc = QLabel(""); self._loc.setStyleSheet("color:#888;")
         bb.addWidget(self._loc); lay.addLayout(bb)
 
@@ -600,20 +640,7 @@ class ReaderWin(QMainWindow):
         hs.insert(0, k); del hs[10:]; save_cfg(self._c)
 
     def _refresh_hist(self):
-        self._hist.blockSignals(True); self._hist.clear()
-        for k in self._c.get("history", []):
-            self._hist.addItem(os.path.basename(k), k)
-        if self._bp:
-            k = os.path.abspath(self._bp)
-            idx = self._hist.findData(k)
-            if idx >= 0: self._hist.setCurrentIndex(idx)
-        self._hist.blockSignals(False)
-
-    def _on_hist(self, idx):
-        if idx < 0: return
-        path = self._hist.itemData(idx)
-        if path and path != os.path.abspath(self._bp):
-            self._sv(); self._load_book(path)
+        pass
 
     def _hist_dlg(self):
         d = QDialog(self); d.setWindowTitle("阅读历史"); d.setFixedSize(400, 350); d.setStyleSheet(QSS)
@@ -674,6 +701,18 @@ class ReaderWin(QMainWindow):
     def _on_font(self, v):
         f = self._tx.font(); f.setPixelSize(v); self._tx.setFont(f)
         self._c["font_size"] = v; save_cfg(self._c)
+
+    def _on_vol(self, v):
+        self._c["volume"] = v / 100
+        self._vol_lbl.setText(f"{v}%")
+        save_cfg(self._c)
+
+    def _settings(self):
+        SettingsDialog(self, self._c).exec()
+        self._vol.blockSignals(True)
+        self._vol.setValue(int(self._c.get("volume", 1.0) * 100))
+        self._vol.blockSignals(False)
+        self._vol_lbl.setText(f"{int(self._c.get('volume', 1.0) * 100)}%")
 
     def _on_chap(self, idx):
         if idx >= 0: self._ci = idx; self._pi = 0; self._show(idx, 0)
@@ -765,24 +804,7 @@ class ReaderWin(QMainWindow):
             return
         self._playing = True; self._play_btn.setText("⏸ 暂停")
         self._resume_btn.hide()
-        if (hasattr(self, '_paused_gid') and self._paused_gid != 0
-                and self._save_sent == getattr(self, '_paused_para', -1)):
-            self._synth_pause.set()
-            self._gid = self._paused_gid
-            self._nxt = self._paused_nxt
-            self._prog.setMaximum(self._paused_total)
-            self._prog.setValue(self._paused_nxt)
-            self._st.setText(f"续播中 ({self._nxt}/{self._paused_total})")
-            self._paused_gid = 0
-            self._pn()
-        else:
-            if hasattr(self, '_paused_gid') and self._paused_gid != 0:
-                self._synth_pause.set()
-                self._gid = 0; self._paused_gid = 0
-                if not self._synth_done.wait(10):
-                    self._st.setText("等待上一个合成完成..."); QApplication.processEvents()
-                    self._synth_done.wait()
-            self._sap()
+        self._sap()
 
     def _resume(self):
         if not hasattr(self, '_paused_gid') or self._paused_gid == 0:
@@ -803,7 +825,13 @@ class ReaderWin(QMainWindow):
         self._playing = False; self._play_btn.setText("▶ 播放")
         self._synth_pause.clear()
         self._resume_btn.show()
-        sd.stop(); self._sv()
+        if hasattr(self, '_cur_stream') and self._cur_stream is not None:
+            try: self._cur_stream.stop()
+            except Exception: pass
+            try: self._cur_stream.close()
+            except Exception: pass
+            self._cur_stream = None
+        self._sv()
         self._paused_gid = self._gid
         self._paused_nxt = max(0, self._nxt - 1)
         self._paused_para = self._para_start
@@ -821,7 +849,10 @@ class ReaderWin(QMainWindow):
 
     def _sap(self):
         if not self._playing: return
+        self._gid += 1           # kill any lingering synth thread
+        self._stop_stream()      # kill any lingering audio output
         self._synth_pause.set()
+        self._paused_gid = 0
         ci = self._ci
         if ci >= len(self._chs): self._dn(); return
         _, ps = self._chs[ci]
@@ -855,7 +886,11 @@ class ReaderWin(QMainWindow):
                     self._synth_pause.wait()
                     if self._gid != gid: return
                     try:
-                        pcm = TtsEngine.synth(txt, cfg.get("speed", 1.0))
+                        sv = cfg.get("server", {})
+                        tag = sv.get("fish_tag", "")
+                        if tag and sv.get("model_type", "") == "Fish S2":
+                            txt = tag + txt
+                        pcm = TtsEngine.synth(txt)
                         if self._gid != gid: return
                         pcm = np.clip(pcm, -1, 1)
                         with self._wavs_lock:
@@ -902,16 +937,40 @@ class ReaderWin(QMainWindow):
                     self._tx.setTextCursor(cursor)
                     self._tx.ensureCursorVisible()
         print(f"[TTS {idx}/{self._total}] {self._sens[idx][:60]}")
-        sd.stop()
+        self._stop_stream()
         pcm = np.frombuffer(r, dtype=np.float32)
-        vol = self._sens_cfg.get("volume", 1.0)
-        if vol != 1.0: pcm = np.clip(pcm * vol, -1, 1)
-        sd.play(pcm.astype(np.float32), self._sample_rate)
+        self._cur_pcm = pcm.astype(np.float32)
+        self._cur_pos = 0
+
+        def _cb(outdata, frames, time_info, status):
+            if status:
+                print(f"[audio] {status}")
+            remaining = len(self._cur_pcm) - self._cur_pos
+            if remaining <= 0:
+                raise sd.CallbackStop()
+            n = min(frames, remaining)
+            vol = self._c.get("volume", 1.0)
+            outdata[:n, 0] = np.clip(self._cur_pcm[self._cur_pos:self._cur_pos + n] * vol, -1, 1)
+            if n < frames:
+                outdata[n:, 0] = 0
+                raise sd.CallbackStop()
+            self._cur_pos += n
+
+        stream = sd.OutputStream(samplerate=self._sample_rate, channels=1,
+                                  callback=_cb, dtype='float32')
+        self._cur_stream = stream
+        stream.start()
+
         def _w():
-            if not self._playing: sd.stop(); return
+            if not self._playing:
+                try: stream.stop()
+                except Exception: pass
+                try: stream.close()
+                except Exception: pass
+                return
             try:
-                if sd.get_stream() is not None and sd.get_stream().active:
-                    QTimer.singleShot(200, _w)
+                if stream.active:
+                    QTimer.singleShot(150, _w)
                 elif self._nxt >= self._total:
                     self._av()
                 else:
@@ -921,8 +980,17 @@ class ReaderWin(QMainWindow):
                 else: self._pn()
         _w()
 
+    def _stop_stream(self):
+        if hasattr(self, '_cur_stream') and self._cur_stream is not None:
+            try: self._cur_stream.stop()
+            except Exception: pass
+            try: self._cur_stream.close()
+            except Exception: pass
+            self._cur_stream = None
+
     def _dn(self):
         self._playing = False; self._play_btn.setText("▶ 播放")
+        self._stop_stream()
         self._st.setText("朗读完成"); self._st.setStyleSheet("color:#0a0;"); self._sv()
 
     def _pr(self):
@@ -931,7 +999,7 @@ class ReaderWin(QMainWindow):
         self._tx.verticalScrollBar().setValue(0); self._ri()
 
     def _nx(self):
-        self._playing = False; sd.stop()
+        self._playing = False; self._stop_stream()
         if self._ci + 1 < len(self._chs):
             self._ci += 1; self._pi = 0; self._cl.setCurrentRow(self._ci); self._show(self._ci, 0)
         self._tx.verticalScrollBar().setValue(0); self._ri(); self._st.setText("")
@@ -958,18 +1026,22 @@ class ReaderWin(QMainWindow):
         for name in ("bridge_reader_gui.py", "bridge_reader_gui.exe"):
             path = os.path.join(_FILE_DIR, name)
             if os.path.exists(path):
-                self._sv(); sd.stop(); save_cfg(self._c)
+                self._sv(); self._stop_stream(); save_cfg(self._c)
                 os.startfile(path)
                 QApplication.quit()
                 return
         QMessageBox.warning(self, "提示", "未找到 bridge_reader_gui.py 或 bridge_reader_gui.exe")
 
     def _save_quit(self):
-        self._sv(); sd.stop(); save_cfg(self._c); QApplication.quit()
+        self._sv(); self._stop_stream(); save_cfg(self._c); QApplication.quit()
 
     def _fullscreen(self):
         if self.isFullScreen(): self.showNormal()
         else: self.showFullScreen()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._adapt_toolbar()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_F11: self._fullscreen()
@@ -977,7 +1049,7 @@ class ReaderWin(QMainWindow):
         else: super().keyPressEvent(e)
 
     def closeEvent(self, e):
-        self._sv(); sd.stop(); save_cfg(self._c)
+        self._sv(); self._stop_stream(); save_cfg(self._c)
         e.accept()
 
 

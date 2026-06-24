@@ -18,6 +18,8 @@ SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 9988
 BRIDGE_PORT = 8899
 
+## ═══════════ 语速调整 (disabled) ═══════════
+
 # ═══════════ 工具函数 ═══════════
 
 def load_cfg():
@@ -65,6 +67,12 @@ def split_text(text):
     return final
 
 
+# ═══════════ 自适应按钮 ═══════════
+
+class ResponsiveButton(QPushButton):
+    def minimumSizeHint(self):
+        return QSize(0, super().minimumSizeHint().height())
+
 # ═══════════ TTS 引擎 (TCP Server 封装) ═══════════
 
 class TtsEngine:
@@ -84,7 +92,7 @@ class TtsEngine:
         return data
 
     @classmethod
-    def synth(cls, text, speed=1.0):
+    def synth(cls, text):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(120)
@@ -114,11 +122,7 @@ class TtsEngine:
             if len(arr) != n_samples:
                 raise RuntimeError(f"Truncated PCM: got {len(arr)}, expected {n_samples}")
 
-            if speed != 1.0 and speed > 0.1:
-                old_len = len(arr)
-                new_len = int(old_len / speed)
-                arr = np.interp(np.linspace(0, old_len - 1, new_len),
-                                np.arange(old_len), arr).astype(np.float32)
+            ## speed disabled
             return arr
 
         except ConnectionRefusedError:
@@ -142,7 +146,7 @@ QMainWindow, QWidget { background-color: #111; color: #ddd; }
 QPlainTextEdit, QTextEdit {
     background-color: #1a1a18; color: #c8b878; border: none;
     padding: 30px 50px; line-height: 1.8;
-    selection-background-color: #3a3520;
+    selection-background-color: #2a2518; selection-color: #c8b878;
 }
 QLineEdit {
     background: #252525; color: #ddd; border: 1px solid #444;
@@ -203,33 +207,46 @@ class BridgeWin(QMainWindow):
         self._connect_signals()
         self._start_http_server()
 
+    def _tool_btn(self, icon, text, tooltip, func):
+        b = ResponsiveButton(f"{icon} {text}")
+        b.setToolTip(tooltip); b.setStyleSheet("padding:4px 6px;")
+        b.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        b.clicked.connect(func)
+        b._icon = icon; b._text = text
+        self._collapse_btns.append(b)
+        return b
+
+    def _adapt_toolbar(self):
+        wide = self.width() >= 800
+        for b in self._collapse_btns:
+            if wide: b.setText(f"{b._icon} {b._text}")
+            else: b.setText(b._icon)
+
     def _build(self):
         cw = QWidget(); self.setCentralWidget(cw)
         lay = QVBoxLayout(cw); lay.setContentsMargins(10, 8, 10, 6); lay.setSpacing(6)
 
-        # ── 工具栏 ──
-        tb = QHBoxLayout()
-        cfg_btn = QPushButton("⚙ 配置")
-        cfg_btn.clicked.connect(lambda: QMessageBox.information(
-            self, "配置", "TTS Server 配置请使用 reader_qt_server.py 的「模型配置」功能。\n\n"
-            "桥接端口在此配置：可在 reader_config.json 中修改 bridge.http_port，默认为 8899。"))
-        tb.addWidget(cfg_btn)
+        self._collapse_btns = []
 
-        launch_btn = QPushButton("🚀 启动 Server")
-        launch_btn.clicked.connect(self._launch_server)
-        tb.addWidget(launch_btn)
+        # ── 工具栏 ──
+        tb = QHBoxLayout(); tb.setSpacing(3)
+        tb.addWidget(self._tool_btn("⚙", "配置", "配置说明",
+                     lambda: QMessageBox.information(
+                         self, "配置", "TTS Server 配置请使用 reader_qt_server.py 的「模型配置」功能。\n\n"
+                         "桥接端口在此配置：可在 reader_config.json 中修改 bridge.http_port，默认为 8899。")))
+        tb.addWidget(self._tool_btn("🚀", "启动", "启动 Server", self._launch_server))
 
         self._server_lbl = QLabel("HTTP: 启动中...")
         self._server_lbl.setStyleSheet("color:#fa0;")
         tb.addWidget(self._server_lbl)
 
         tb.addStretch()
-        tb.addWidget(QLabel(" A-"))
+        tb.addWidget(QLabel("A-"))
         self._fs = QSlider(Qt.Orientation.Horizontal); self._fs.setRange(8, 64)
-        fs = self._c.get("font_size", 23); self._fs.setValue(fs); self._fs.setFixedWidth(80)
+        fs = self._c.get("font_size", 23); self._fs.setValue(fs); self._fs.setFixedWidth(64)
         self._fs.valueChanged.connect(self._on_font); tb.addWidget(self._fs)
         tb.addWidget(QLabel("A+"))
-        self._keep_btn = QCheckBox("暂停时后台合成")
+        self._keep_btn = QCheckBox("后台合成")
         self._keep_btn.setChecked(self._pause_keep_synth)
         self._keep_btn.toggled.connect(self._on_keep_synth)
         tb.addWidget(self._keep_btn)
@@ -237,9 +254,7 @@ class BridgeWin(QMainWindow):
         self._auto_btn.setChecked(self._auto_play)
         self._auto_btn.toggled.connect(self._on_auto_play)
         tb.addWidget(self._auto_btn)
-        full_btn = QPushButton("⛶ 全屏")
-        full_btn.clicked.connect(self._fullscreen)
-        tb.addWidget(full_btn)
+        tb.addWidget(self._tool_btn("⛶", "全屏", "全屏", self._fullscreen))
         lay.addLayout(tb)
 
         # ── 章节标题 ──
@@ -256,16 +271,14 @@ class BridgeWin(QMainWindow):
         lay.addWidget(self._tx)
 
         # ── 播放栏 ──
-        bb = QHBoxLayout()
+        bb = QHBoxLayout(); bb.setSpacing(3)
         self._play_btn = QPushButton("▶ 播放")
         self._play_btn.setObjectName("playBtn")
         self._play_btn.clicked.connect(self._toggle_play)
         self._play_btn.setEnabled(False)
         bb.addWidget(self._play_btn)
 
-        stop_btn = QPushButton("⏹ 停止")
-        stop_btn.clicked.connect(self._stop)
-        bb.addWidget(stop_btn)
+        bb.addWidget(self._tool_btn("⏹", "停止", "停止", self._stop))
 
         self._resume_btn = QPushButton("⏵ 续播")
         self._resume_btn.setObjectName("playBtn")
@@ -276,45 +289,48 @@ class BridgeWin(QMainWindow):
         self._prog = QProgressBar(); self._prog.setMaximum(1)
         bb.addWidget(self._prog)
 
-        self._prog_lbl = QLabel("0/0句"); self._prog_lbl.setStyleSheet("color:#888;")
+        self._prog_lbl = QLabel("0/0"); self._prog_lbl.setStyleSheet("color:#888;")
         bb.addWidget(self._prog_lbl)
 
         bb.addStretch()
 
-        # 音量
-        bb.addWidget(QLabel("音量"))
+        bb.addWidget(QLabel("🔈"))
         self._vol_slider = QSlider(Qt.Orientation.Horizontal)
         self._vol_slider.setRange(0, 150)
         self._vol_slider.setValue(int(self._volume * 100))
-        self._vol_slider.setFixedWidth(80)
+        self._vol_slider.setFixedWidth(64)
         self._vol_slider.valueChanged.connect(self._on_volume)
         bb.addWidget(self._vol_slider)
         self._vol_lbl = QLabel(f"{int(self._volume * 100)}%")
         bb.addWidget(self._vol_lbl)
 
-        # 同步滚动
-        self._sync_btn = QPushButton("⟳ 同步滚动")
-        self._sync_btn.setCheckable(True)
-        self._sync_btn.setFixedWidth(100)
-        self._sync_btn.toggled.connect(lambda v: setattr(self, '_sync_scroll', v))
+        self._sync_btn = QPushButton("⟳")
+        self._sync_btn.setToolTip("同步滚动")
+        self._sync_btn.setCheckable(True); self._sync_btn.setStyleSheet("padding:4px 6px;")
+        def _sync_toggled(v):
+            self._sync_scroll = v
+            if v: self._sync_btn.setStyleSheet("background:#3a5a3a; color:#fff; border:1px solid #5a8a5a; border-radius:6px; padding:4px 6px; font-size:13px;")
+            else: self._sync_btn.setStyleSheet("padding:4px 6px;")
+        self._sync_btn.toggled.connect(_sync_toggled)
         bb.addWidget(self._sync_btn)
 
-        # 语速
-        bb.addWidget(QLabel("语速"))
-        self._speed_slider = QSlider(Qt.Orientation.Horizontal)
-        self._speed_slider.setRange(50, 200); self._speed_slider.setValue(100)
-        self._speed_slider.setFixedWidth(80)
-        self._speed_slider.valueChanged.connect(self._on_speed)
-        bb.addWidget(self._speed_slider)
-
-        self._speed_lbl = QLabel("1.0x")
-        bb.addWidget(self._speed_lbl)
+        ## speed slider disabled
+        ## bb.addWidget(QLabel("⚡"))
+        ## self._speed_slider = QSlider(Qt.Orientation.Horizontal)
+        ## self._speed_slider.setRange(50, 200); self._speed_slider.setValue(100)
+        ## self._speed_slider.setFixedWidth(64)
+        ## self._speed_slider.valueChanged.connect(self._on_speed)
+        ## bb.addWidget(self._speed_slider)
+        ## self._speed_lbl = QLabel("1.0x")
+        ## bb.addWidget(self._speed_lbl)
         lay.addLayout(bb)
 
         # ── 状态栏 ──
         self._status_lbl = QLabel("就绪 — 等待浏览器发送章节...")
         self._status_lbl.setStyleSheet("color:#888; padding: 4px;")
         lay.addWidget(self._status_lbl)
+
+        self._adapt_toolbar()
 
     def _connect_signals(self):
         self._signals.text_received.connect(self._on_text_received)
@@ -409,14 +425,14 @@ class BridgeWin(QMainWindow):
         self._playback_id += 1      # 旧线程看到 ID 变化后退出
         self._playing = False; self._paused = False
         self._paused_id = 0
-        sd.stop()
+        self._stop_stream()
         self._resume_btn.hide()
 
         self._current_text = text
         self._current_title = title
-        self._speed = speed
-        self._speed_slider.setValue(int(speed * 100))
-        self._speed_lbl.setText(f"{speed:.1f}x")
+        ## self._speed = speed  # speed disabled
+        ## self._speed_slider.setValue(int(speed * 100))
+        ## self._speed_lbl.setText(f"{speed:.1f}x")
 
         self._sentences = split_text(text)
         self._total = len(self._sentences)
@@ -530,7 +546,7 @@ class BridgeWin(QMainWindow):
         self._wavs = {}; self._wavs_lock = threading.Lock()
         self._playback_id += 1
         pid = self._playback_id
-        speed = self._speed
+        ## speed = self._speed  # disabled
 
         def _synth_worker():
             for idx in range(start_idx, self._total):
@@ -539,7 +555,12 @@ class BridgeWin(QMainWindow):
                 if self._playback_id != pid:
                     return
                 try:
-                    pcm = TtsEngine.synth(self._sentences[idx], speed)
+                    sv = self._c.get("server", {})
+                    tag = sv.get("fish_tag", "")
+                    txt = self._sentences[idx]
+                    if tag and sv.get("model_type", "") == "Fish S2":
+                        txt = tag + txt
+                    pcm = TtsEngine.synth(txt)
                     if self._playback_id != pid:
                         return
                     pcm = np.clip(pcm, -1, 1)
@@ -579,11 +600,8 @@ class BridgeWin(QMainWindow):
             return
 
         pcm = np.frombuffer(result, dtype=np.float32)
-        if self._volume != 1.0:
-            pcm = np.clip(pcm * self._volume, -1, 1)
-
-        sd.stop()
-        sd.play(pcm, self._sample_rate)
+        self._cur_pcm = pcm.astype(np.float32)
+        self._cur_pos = 0
 
         self._current_idx += 1
         self._prog.setValue(self._current_idx)
@@ -592,7 +610,7 @@ class BridgeWin(QMainWindow):
         self._status_lbl.setStyleSheet("color:#ccc;")
 
         # 同步滚动
-        cur = self._current_idx - 1  # idx that just started playing
+        cur = self._current_idx - 1
         if self._sync_scroll and cur < len(self._sentences):
             needle = self._sentences[cur][:30]
             if needle:
@@ -606,31 +624,57 @@ class BridgeWin(QMainWindow):
         with self._wavs_lock:
             self._wavs.pop(self._current_idx - 2, None)
 
-        self._wait_audio()
+        self._stop_stream()
+
+        def _cb(outdata, frames, time_info, status):
+            if status:
+                print(f"[audio] {status}")
+            remaining = len(self._cur_pcm) - self._cur_pos
+            if remaining <= 0:
+                raise sd.CallbackStop()
+            n = min(frames, remaining)
+            vol = self._c.get("volume", 1.0)
+            outdata[:n, 0] = np.clip(self._cur_pcm[self._cur_pos:self._cur_pos + n] * vol, -1, 1)
+            if n < frames:
+                outdata[n:, 0] = 0
+                raise sd.CallbackStop()
+            self._cur_pos += n
+
+        stream = sd.OutputStream(samplerate=self._sample_rate, channels=1,
+                                  callback=_cb, dtype='float32')
+        self._cur_stream = stream
+        stream.start()
+
+        def _w():
+            if not self._playing:
+                try: stream.stop()
+                except Exception: pass
+                try: stream.close()
+                except Exception: pass
+                return
+            try:
+                if stream.active:
+                    QTimer.singleShot(150, _w)
+                elif self._current_idx >= self._total:
+                    self._on_finished()
+                else:
+                    self._play_next()
+            except Exception:
+                if self._current_idx >= self._total:
+                    self._on_finished()
+                else:
+                    self._play_next()
+        _w()
 
     def _wait_audio(self):
-        if not self._playing:
-            sd.stop()
-            return
-        try:
-            stream = sd.get_stream()
-            if stream is not None and stream.active:
-                QTimer.singleShot(200, self._wait_audio)
-            elif self._current_idx >= self._total:
-                self._on_finished()
-            else:
-                self._play_next()
-        except Exception:
-            if self._current_idx >= self._total:
-                self._on_finished()
-            else:
-                self._play_next()
+        """保留兼容，不再使用。"""
+        pass
 
     def _pause(self):
         """暂停：停音频、阻塞合成线程、显示续播按钮。"""
         self._paused = True; self._playing = False
         self._synth_pause.clear()  # 合成线程在此阻塞，不再发请求
-        sd.stop()
+        self._stop_stream()
         self._play_btn.setText("▶ 播放")
         self._resume_btn.show()
         self._paused_id = self._playback_id
@@ -655,7 +699,7 @@ class BridgeWin(QMainWindow):
         self._playing = False; self._paused = False
         self._synth_pause.set()  # 先解锁合成线程
         self._playback_id += 1   # 再让线程看到 ID 变化后退出
-        sd.stop()
+        self._stop_stream()
         self._resume_btn.hide()
         self._prog.setValue(0)
         self._prog_lbl.setText(f"0/{self._total}句")
@@ -663,19 +707,28 @@ class BridgeWin(QMainWindow):
         self._status_lbl.setText("已停止")
         self._status_lbl.setStyleSheet("color:#888;")
 
+    def _stop_stream(self):
+        if hasattr(self, '_cur_stream') and self._cur_stream is not None:
+            try: self._cur_stream.stop()
+            except Exception: pass
+            try: self._cur_stream.close()
+            except Exception: pass
+            self._cur_stream = None
+
     def _on_finished(self):
         self._playing = False; self._paused = False
         self._synth_pause.set()
+        self._stop_stream()
         self._play_btn.setText("▶ 播放")
         self._resume_btn.hide()
         self._status_lbl.setText("朗读完成 ✓")
         self._status_lbl.setStyleSheet("color:#0a0;")
 
-    def _on_speed(self, v):
-        self._speed = v / 100.0
-        self._speed_lbl.setText(f"{self._speed:.1f}x")
-        self._c["speed"] = self._speed
-        save_cfg(self._c)
+    ## def _on_speed(self, v):  # speed disabled
+    ##     self._speed = v / 100.0
+    ##     self._speed_lbl.setText(f"{self._speed:.1f}x")
+    ##     self._c["speed"] = self._speed
+    ##     save_cfg(self._c)
 
     def _on_volume(self, v):
         self._volume = v / 100.0
@@ -707,6 +760,10 @@ class BridgeWin(QMainWindow):
         else:
             self.showFullScreen()
 
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._adapt_toolbar()
+
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_F11:
             self._fullscreen()
@@ -718,7 +775,7 @@ class BridgeWin(QMainWindow):
     def closeEvent(self, e):
         self._playing = False
         self._playback_id += 1
-        sd.stop()
+        self._stop_stream()
         if self._http_server:
             self._http_server.shutdown()
         save_cfg(self._c)

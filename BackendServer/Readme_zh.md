@@ -48,3 +48,89 @@ cmake --build build --config Release
 - `qwen3tts_server.exe`
 - `fish2_server.exe`
 - `ggml.dll`、`ggml-hip.dll` 等
+
+## TCP API Reference
+
+两个 server 共用同一套 TCP 协议。
+
+### 连接
+
+| 项目 | 值 |
+|------|----|
+| 地址 | `127.0.0.1`（仅本地回环） |
+| 默认端口 | `9988`，可通过 `--port` 覆盖 |
+| 并发 | 每连接 `detach` 一条线程，合成由全局 mutex 序列化 |
+
+### 请求（Client → Server）
+
+```
+┌─────────────────────┬──────────────────────────┐
+│  4 bytes (big-endian)  │  N bytes (UTF-8)          │
+│  int32: text_len       │  text payload              │
+└─────────────────────┴──────────────────────────┘
+```
+
+- `text_len`：文本字节长度（不含空终止符），最大 `10000`
+- `text`：UTF-8 编码的文本
+
+### 响应（Server → Client）
+
+成功时：
+
+```
+┌─────────────────────┬──────────────────────────┐
+│  4 bytes (big-endian)  │  M × 4 bytes                │
+│  int32: n_samples      │  float32 little-endian PCM  │
+└─────────────────────┴──────────────────────────┘
+```
+
+- `n_samples`：采样点数，`> 0`
+- PCM：单声道 float32，取值范围 `[-1, 1]`
+- Qwen3-TTS 采样率为 `24000 Hz`，Fish S2 Pro 为 `44100 Hz`
+
+出错时（模型未加载 / 合成失败 / 文本过长等）：
+
+```
+┌─────────────────────┐
+│  4 bytes (big-endian)  │
+│  int32: -1             │
+└─────────────────────┘
+```
+
+### 示例（Python）
+
+```python
+import socket, struct
+
+def synth(host="127.0.0.1", port=9988, text=""):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(120)
+    sock.connect((host, port))
+
+    payload = text.encode("utf-8")
+    sock.sendall(struct.pack(">i", len(payload)))
+    sock.sendall(payload)
+
+    hdr = recvn(sock, 4)
+    n = struct.unpack(">i", hdr)[0]
+    if n <= 0:
+        raise RuntimeError(f"server error: n_samples={n}")
+
+    data = recvn(sock, n * 4)
+    sock.close()
+    return data  # float32 PCM bytes
+
+
+def recvn(sock, n):
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            break
+        buf.extend(chunk)
+    return buf
+```
+
+### 计划
+
+以后可能加上真流式功能，至少qwen3tts是已经有现成的实现方法可以移植过来
