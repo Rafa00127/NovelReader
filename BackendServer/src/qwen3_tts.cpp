@@ -3613,9 +3613,9 @@ static ggml_cgraph* build_graph_codec_decode(qwen3_tts_context* c, int T) {
     // ── Step 6: Final conv and clamp ────────────────────────────────────────
     h = codec_snake_beta(ctx0, h, codec.out_snake_a, codec.out_snake_b);
     h = codec_causal_conv1d(ctx0, h, codec.out_conv_w, codec.out_conv_b, 1, 1); // [1, 1920T]
-    // No output clamp — matches PyTorch BigVGAN reference which leaves the
-    // waveform unclamped. Clipping normal overshoots (~±1.05–1.15) causes
-    // audible low-fi harshness from hard-clipping harmonics.
+    // Soft clamp at ±1.1 — avoids audible hard-clipping harmonics from BigVGAN's
+    // normal overshoots (~±1.05–1.15) while still preventing extreme values.
+    h = ggml_clamp(ctx0, h, -1.1f, 1.1f);
 
     // Reshape to 1D [1920T]
     const int T_pcm = (int)h->ne[0] * (int)h->ne[1];
@@ -6056,6 +6056,29 @@ extern "C" int32_t* qwen3_tts_synthesize_codes(struct qwen3_tts_context* ctx, co
         free(logits);
         logits = nullptr;
         if (cb0 == eos) {
+            //
+            // ── EOS stop policy ────────────────────────────────────────────────
+            //
+            // When the codec predictor outputs codec_eos_id (2150) as cb0,
+            // generation stops and this frame is NOT appended to all_codes.
+            //
+            // Occasionally (~1%) the final phoneme is cut short — e.g.  "了"
+            // loses its trailing vowel — because the AR model predicts EOS one
+            // frame too early and the codec decoder has no tail to finish the
+            // articulation.
+            //
+            // We tried appending one silence frame (16×0) after EOS to let the
+            // codec tail out, but this introduced an occasional "po" pop at the
+            // utterance boundary.  The codec decoder interprets an all-zero RVQ
+            // frame as a step discontinuity, producing a click.
+            //
+            // For now keep the vanilla behaviour (stop immediately on EOS).
+            // A cleaner future fix would be to repeat the last frame's codes
+            // instead of zeros, or apply a short linear fade-out in the PCM
+            // domain after decoding.
+            //
+            // See: hp.codec_eos_id, min_new_frames above.
+            // ────────────────────────────────────────────────────────────────────
             if (dbg) {
                 fprintf(stderr, "qwen3_tts: codec_eos at frame %d\n", frame);
             }

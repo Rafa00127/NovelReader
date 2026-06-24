@@ -219,6 +219,10 @@ class ModelConfigDialog(QDialog):
         self._fish_rt = QLineEdit(sv.get("fish_ref_text", ""))
         r = QHBoxLayout(); r.addWidget(QLabel("参考文本")); r.addWidget(self._fish_rt)
         fl.addLayout(r)
+        self._fish_tag = QLineEdit(sv.get("fish_tag", ""))
+        self._fish_tag.setPlaceholderText("e.g. [Spanish] or speak in English")
+        r = QHBoxLayout(); r.addWidget(QLabel("Tag")); r.addWidget(self._fish_tag)
+        fl.addLayout(r)
         lay.addWidget(self._fish_box)
 
         self._port = QLineEdit(sv.get("port", "9988"))
@@ -262,6 +266,7 @@ class ModelConfigDialog(QDialog):
             "fish_exe": self._fish_exe.text(), "fish_model": self._fish_model.text(),
             "fish_tokenizer": self._fish_tokenizer.text(),
             "fish_ref_audio": self._fish_ra.text(), "fish_ref_text": self._fish_rt.text(),
+            "fish_tag": self._fish_tag.text(),
         }
         prev_type = self._c.get("server", {}).get("model_type", "")
         self._c["server"] = sv
@@ -446,9 +451,16 @@ class SimpleTtsGui(QMainWindow):
         sv = self._c.get("server", {})
         port = int(sv.get("port", SERVER_PORT))
 
+        # Fish S2 tag prepend
+        synth_text = text
+        if sv.get("model_type", "") == "Fish S2":
+            tag = sv.get("fish_tag", "").strip()
+            if tag:
+                synth_text = tag + " " + text
+
         def _run():
             try:
-                pcm = TtsEngine.synth(text, port)
+                pcm = TtsEngine.synth(synth_text, port)
                 self._pcm = pcm
                 duration = len(pcm) / self._sample_rate
                 self._synth_btn.setText("🎤 重新合成")
