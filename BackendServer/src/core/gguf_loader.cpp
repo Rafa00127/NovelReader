@@ -666,7 +666,7 @@ bool load_weights(const char* path, ggml_backend_t backend, const char* model_ta
         // Fallback: read via FILE* pread/fseek. This is the rare path —
         // most systems have working mmap. We implement it inline here so
         // models don't have to.
-        FILE* fp = fopen(path, "rb");
+        FILE* fp = ggml_fopen(path, "rb");
         if (!fp) {
             fprintf(stderr, "%s: cannot open '%s' for fread fallback\n", tag, path);
             gguf_free(gctx);
@@ -851,7 +851,7 @@ bool load_weights_split(const char* path, ggml_backend_t gpu_backend, ggml_backe
     // copy where the kernel will demand-page; fall back to pread.
     MappedFile mf(path);
     if (!mf.ok) {
-        FILE* fp = fopen(path, "rb");
+        FILE* fp = ggml_fopen(path, "rb");
         if (!fp) {
             fprintf(stderr, "%s: cannot open '%s' for fread fallback\n", tag, path);
             free_weights(out);

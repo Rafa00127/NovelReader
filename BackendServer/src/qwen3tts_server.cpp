@@ -11,6 +11,8 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#include <shellapi.h>
 #pragma comment(lib, "ws2_32.lib")
 #else
 #include <arpa/inet.h>
@@ -190,6 +192,29 @@ static void server_loop() {
 }
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    // Windows main() receives argv in the system ANSI code page (e.g. GBK),
+    // which corrupts non-ASCII paths. Use GetCommandLineW + CommandLineToArgvW
+    // to get the raw UTF-16 command line and convert to UTF-8 argv.
+    {
+        int argc_w = 0;
+        LPWSTR* argv_w = CommandLineToArgvW(GetCommandLineW(), &argc_w);
+        if (argv_w) {
+            static std::vector<std::string> utf8_args;
+            static std::vector<char*> new_argv;
+            for (int i = 0; i < argc_w; i++) {
+                int len = WideCharToMultiByte(CP_UTF8, 0, argv_w[i], -1, nullptr, 0, nullptr, nullptr);
+                std::string s(len - 1, '\0');
+                WideCharToMultiByte(CP_UTF8, 0, argv_w[i], -1, &s[0], len, nullptr, nullptr);
+                utf8_args.push_back(std::move(s));
+            }
+            LocalFree(argv_w);
+            for (auto& s : utf8_args) new_argv.push_back(s.data());
+            argv = new_argv.data();
+            argc = argc_w;
+        }
+    }
+#endif
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--model") && i + 1 < argc)
             g_talker_path = argv[++i];
