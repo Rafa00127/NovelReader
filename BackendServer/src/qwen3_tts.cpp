@@ -1290,7 +1290,9 @@ float* run_embed_text(qwen3_tts_context* c, const int32_t* ids, int n) {
     const int d = (int)c->hp.d_model;
     // AMD VK driver crashes on ggml_mul_mat with batch=7 on 7900 XTX.
     // Split n=7 into 6+1 to work around the driver bug.
-    if (n == 7) {
+    const char* be_name = ggml_backend_name(c->backend);
+    const bool is_vk = be_name && strstr(be_name, "Vulkan");
+    if (n == 7 && is_vk) {
         float* r = (float*)malloc((size_t)d * n * sizeof(float));
         if (!r) return nullptr;
         for (int off = 0; off < n; off += 6) {
