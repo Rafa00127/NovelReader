@@ -1291,13 +1291,17 @@ float* run_embed_text(qwen3_tts_context* c, const int32_t* ids, int n) {
     ggml_cgraph* gf = build_graph_embed_text(c, n);
     ggml_backend_sched_reset(c->sched);
     if (!ggml_backend_sched_alloc_graph(c->sched, gf)) {
+        //fprintf(stderr, "qwen3_tts: dbg — embed_text alloc failed\n"); fflush(stderr);
         return nullptr;
     }
     ggml_tensor* in = ggml_graph_get_tensor(gf, "input_ids");
     ggml_backend_tensor_set(in, ids, 0, (size_t)n * sizeof(int32_t));
+    //fprintf(stderr, "qwen3_tts: dbg — embed_text compute n=%d...\n", n); fflush(stderr);
     if (ggml_backend_sched_graph_compute(c->sched, gf) != GGML_STATUS_SUCCESS) {
+        //fprintf(stderr, "qwen3_tts: dbg — embed_text compute FAILED\n"); fflush(stderr);
         return nullptr;
     }
+    //fprintf(stderr, "qwen3_tts: dbg — embed_text compute done\n"); fflush(stderr);
     ggml_tensor* out = ggml_graph_get_tensor(gf, "embeds");
     float* r = (float*)malloc((size_t)d * n * sizeof(float));
     ggml_backend_tensor_get(out, r, 0, (size_t)d * n * sizeof(float));
@@ -2961,6 +2965,7 @@ bool build_icl_prefill_embeds(qwen3_tts_context* c, const std::string& syn_text,
 bool build_customvoice_prefill_embeds(qwen3_tts_context* c, const std::string& syn_text,
                                       std::vector<float>& prefill_embeds, int& T_prefill,
                                       std::vector<float>& trailing_text_hidden, int& M_trailing) {
+    //fprintf(stderr, "qwen3_tts: dbg — cv_prefill entry\n"); fflush(stderr);
     const auto& hp = c->hp;
     const int d = (int)hp.d_model;
 
@@ -2969,7 +2974,9 @@ bool build_customvoice_prefill_embeds(qwen3_tts_context* c, const std::string& s
         return false;
     }
 
+    //fprintf(stderr, "qwen3_tts: dbg — cv_tokenizing...\n"); fflush(stderr);
     auto syn_ids = tokenise_assistant_text(c, syn_text);
+    //fprintf(stderr, "qwen3_tts: dbg — cv_tokenize n_ids=%zu\n", syn_ids.size()); fflush(stderr);
     if ((int)syn_ids.size() < 9) {
         fprintf(stderr, "qwen3_tts[customvoice]: prompt too short (%zu)\n", syn_ids.size());
         return false;
@@ -2977,7 +2984,9 @@ bool build_customvoice_prefill_embeds(qwen3_tts_context* c, const std::string& s
 
     // ---- tts_bos / tts_eos / tts_pad embeds via text_proj ----
     int32_t tts_special[3] = {(int32_t)hp.tts_bos_id, (int32_t)hp.tts_eos_id, (int32_t)hp.tts_pad_id};
+    //fprintf(stderr, "qwen3_tts: dbg — cv_run_embed_text (special)...\n"); fflush(stderr);
     float* tts_special_emb = run_embed_text(c, tts_special, 3);
+    //fprintf(stderr, "qwen3_tts: dbg — cv_special_emb=%p\n", (void*)tts_special_emb); fflush(stderr);
     if (!tts_special_emb) {
         return false;
     }
@@ -2995,8 +3004,10 @@ bool build_customvoice_prefill_embeds(qwen3_tts_context* c, const std::string& s
     }
     int32_t codec_pad_bos[2] = {(int32_t)hp.codec_pad_id, (int32_t)hp.codec_bos_id};
 
+    //fprintf(stderr, "qwen3_tts: dbg — cv_lookup_rows (codec)...\n"); fflush(stderr);
     float* codec_pre_emb = lookup_rows(c, c->talker.token_embd_w, codec_prefill.data(), (int)codec_prefill.size());
     float* codec_pb_emb = lookup_rows(c, c->talker.token_embd_w, codec_pad_bos, 2);
+    //fprintf(stderr, "qwen3_tts: dbg — cv_codec_emb pre=%p pb=%p\n", (void*)codec_pre_emb, (void*)codec_pb_emb); fflush(stderr);
     if (!codec_pre_emb || !codec_pb_emb) {
         free(tts_special_emb);
         free(codec_pre_emb);
@@ -3018,6 +3029,8 @@ bool build_customvoice_prefill_embeds(qwen3_tts_context* c, const std::string& s
     free(codec_pre_emb);
     free(codec_pb_emb);
 
+    //fprintf(stderr, "qwen3_tts: dbg — cv_codec_bridge done L_codec=%d\n", L_codec); fflush(stderr);
+
     // ---- optional style instruct block (CustomVoice 1.7B) ----
     // When runtime_cv_style_instruct is non-empty, prepend an instruct block
     // (same path as VoiceDesign) while keeping the speaker frame in the
@@ -3038,6 +3051,7 @@ bool build_customvoice_prefill_embeds(qwen3_tts_context* c, const std::string& s
     }
 
     // ---- role embed: text_proj(text_embd(syn_ids[:3])) ----
+    //fprintf(stderr, "qwen3_tts: dbg — cv_role_emb...\n"); fflush(stderr);
     std::vector<int32_t> role_ids(syn_ids.begin(), syn_ids.begin() + 3);
     float* role_emb = run_embed_text(c, role_ids.data(), 3);
     if (!role_emb) {
@@ -3988,7 +4002,7 @@ static float* codec_decode_codes(qwen3_tts_context* c, const int32_t* codes, int
                                 mask_data.size() * sizeof(ggml_fp16_t));
     }
 
-    //fprintf(stderr, "qwen3_tts: codec: compute...\n"); fflush(stderr);
+    fprintf(stderr, "qwen3_tts: codec: compute (T=%d)...\n", T_codec); fflush(stderr);
     codec_trace_state ts{sched, 0, ggml_graph_n_nodes(gf)};
     if (std::getenv("QWEN3_TTS_CODEC_TRACE")) {
         fprintf(stderr, "qwen3_tts: codec: tracing %d nodes\n", ts.total);
@@ -5887,13 +5901,16 @@ extern "C" int32_t* qwen3_tts_synthesize_codes(struct qwen3_tts_context* ctx, co
     if (out_n_codes) {
         *out_n_codes = 0;
     }
+    //fprintf(stderr, "qwen3_tts: dbg — synthesize_codes entry\n"); fflush(stderr);
     if (!ctx || !text) {
+        //fprintf(stderr, "qwen3_tts: dbg — null ctx or text\n"); fflush(stderr);
         return nullptr;
     }
     if (ctx->vocab.id_to_token.empty()) {
         fprintf(stderr, "qwen3_tts: vocab empty — re-convert with the updated converter\n");
         return nullptr;
     }
+    //fprintf(stderr, "qwen3_tts: dbg — model_type=%s\n", ctx->hp.tts_model_type.c_str()); fflush(stderr);
     const bool is_custom_voice = (ctx->hp.tts_model_type == "custom_voice");
     const bool is_voice_design = (ctx->hp.tts_model_type == "voice_design");
     if (is_custom_voice) {
@@ -5945,14 +5962,17 @@ extern "C" int32_t* qwen3_tts_synthesize_codes(struct qwen3_tts_context* ctx, co
     std::vector<float> prefill, trailing;
     int T_pre = 0, M_trail = 0;
     if (is_custom_voice) {
+        //fprintf(stderr, "qwen3_tts: dbg — build_customvoice_prefill_embeds...\n"); fflush(stderr);
         if (!build_customvoice_prefill_embeds(ctx, text, prefill, T_pre, trailing, M_trail)) {
             return nullptr;
         }
     } else if (is_voice_design) {
+        //fprintf(stderr, "qwen3_tts: dbg — build_voicedesign_prefill_embeds...\n"); fflush(stderr);
         if (!build_voicedesign_prefill_embeds(ctx, ctx->runtime_instruct, text, prefill, T_pre, trailing, M_trail)) {
             return nullptr;
         }
     } else {
+        //fprintf(stderr, "qwen3_tts: dbg — build_icl_prefill_embeds...\n"); fflush(stderr);
         std::string ref_text;
         if (!ctx->runtime_ref_text.empty()) {
             ref_text = ctx->runtime_ref_text;
@@ -5972,6 +5992,7 @@ extern "C" int32_t* qwen3_tts_synthesize_codes(struct qwen3_tts_context* ctx, co
             return nullptr;
         }
     }
+    //fprintf(stderr, "qwen3_tts: dbg — prefill done T_pre=%d M_trail=%d\n", T_pre, M_trail); fflush(stderr);
     if (bench) {
         const char* label = is_custom_voice ? "customvoice" : (is_voice_design ? "voicedesign" : "icl");
         fprintf(stderr, "qwen3_tts: prefill %7.1f ms (T=%d, %s)\n", now_ms() - t0, T_pre, label);
@@ -5983,7 +6004,9 @@ extern "C" int32_t* qwen3_tts_synthesize_codes(struct qwen3_tts_context* ctx, co
     // ---- talker prefill: get logits + hidden_last ----
     double t1 = bench ? now_ms() : 0.0;
     float* past_hidden = nullptr;
+    //fprintf(stderr, "qwen3_tts: dbg — run_talker_kv prefill T_pre=%d...\n", T_pre); fflush(stderr);
     float* logits = run_talker_kv(ctx, prefill.data(), T_pre, /*n_past=*/0, &past_hidden);
+    //fprintf(stderr, "qwen3_tts: dbg — run_talker_kv done logits=%p past=%p\n", (void*)logits, (void*)past_hidden); fflush(stderr);
     if (!logits || !past_hidden) {
         free(logits);
         free(past_hidden);
@@ -6346,8 +6369,10 @@ extern "C" float* qwen3_tts_synthesize(struct qwen3_tts_context* ctx, const char
     }
     const double t_total0 = now_ms();
     int n_codes = 0;
+    //fprintf(stderr, "qwen3_tts: dbg — calling synthesize_codes...\n"); fflush(stderr);
     int32_t* codes = qwen3_tts_synthesize_codes(ctx, text, &n_codes);
     const double t_codes = now_ms();
+    //fprintf(stderr, "qwen3_tts: dbg — codes=%p n_codes=%d\n", (void*)codes, n_codes); fflush(stderr);
     if (!codes || n_codes <= 0) {
         free(codes);
         return nullptr;
@@ -6368,6 +6393,8 @@ extern "C" float* qwen3_tts_synthesize(struct qwen3_tts_context* ctx, const char
 
     const int T_gen = n_codes / n_q;
     float* pcm = nullptr;
+
+    //fprintf(stderr, "qwen3_tts: dbg — T_gen=%d T_ref=%d\n", T_gen, T_ref); fflush(stderr);
 
     // Default ON — bit-identity validated 2026-05-05 against the
     // unskipped path on Apple Silicon Metal, qwen3-tts-customvoice
@@ -6400,7 +6427,9 @@ extern "C" float* qwen3_tts_synthesize(struct qwen3_tts_context* ctx, const char
         codes_for_decode.insert(codes_for_decode.end(), codes, codes + n_codes);
 
         int n_pcm_full = 0;
+        //fprintf(stderr, "qwen3_tts: dbg — codec_decode (ref+gen, T=%d)...\n", T_ref + T_gen); fflush(stderr);
         pcm = codec_decode_codes(ctx, codes_for_decode.data(), T_ref + T_gen, &n_pcm_full);
+        //fprintf(stderr, "qwen3_tts: dbg — codec_decode done pcm=%p n=%d\n", (void*)pcm, n_pcm_full); fflush(stderr);
         if (!pcm || n_pcm_full <= 0) {
             free(codes);
             free(pcm);
@@ -6424,7 +6453,9 @@ extern "C" float* qwen3_tts_synthesize(struct qwen3_tts_context* ctx, const char
             *out_n_samples = n_pcm_trim;
         }
     } else {
+        //fprintf(stderr, "qwen3_tts: dbg — codec_decode (gen-only, T=%d)...\n", T_gen); fflush(stderr);
         pcm = codec_decode_codes(ctx, codes, T_gen, out_n_samples);
+        //fprintf(stderr, "qwen3_tts: dbg — codec_decode done pcm=%p\n", (void*)pcm); fflush(stderr);
     }
 
     free(codes);
