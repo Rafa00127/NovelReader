@@ -3972,14 +3972,14 @@ static float* codec_decode_codes(qwen3_tts_context* c, const int32_t* codes, int
     ggml_cgraph* gf = build_graph_codec_decode(c, T_codec);
     ggml_backend_sched_t sched = codec_pick_sched(c);
 
-    fprintf(stderr, "qwen3_tts: codec: sched_alloc...\n"); fflush(stderr);
+    //fprintf(stderr, "qwen3_tts: codec: sched_alloc...\n"); fflush(stderr);
     ggml_backend_sched_reset(sched);
     if (!ggml_backend_sched_alloc_graph(sched, gf)) {
         fprintf(stderr, "qwen3_tts: codec: graph alloc failed\n");
         return nullptr;
     }
 
-    fprintf(stderr, "qwen3_tts: codec: tensor_set...\n"); fflush(stderr);
+    //fprintf(stderr, "qwen3_tts: codec: tensor_set...\n"); fflush(stderr);
     ggml_backend_tensor_set(ggml_graph_get_tensor(gf, "codec_codes"), codes_t.data(), 0,
                             codes_t.size() * sizeof(int32_t));
     ggml_backend_tensor_set(ggml_graph_get_tensor(gf, "codec_positions"), pos.data(), 0, pos.size() * sizeof(int32_t));
@@ -3988,7 +3988,7 @@ static float* codec_decode_codes(qwen3_tts_context* c, const int32_t* codes, int
                                 mask_data.size() * sizeof(ggml_fp16_t));
     }
 
-    fprintf(stderr, "qwen3_tts: codec: compute...\n"); fflush(stderr);
+    //fprintf(stderr, "qwen3_tts: codec: compute...\n"); fflush(stderr);
     codec_trace_state ts{sched, 0, ggml_graph_n_nodes(gf)};
     if (std::getenv("QWEN3_TTS_CODEC_TRACE")) {
         fprintf(stderr, "qwen3_tts: codec: tracing %d nodes\n", ts.total);
@@ -4004,20 +4004,20 @@ static float* codec_decode_codes(qwen3_tts_context* c, const int32_t* codes, int
         int n = ggml_backend_sched_get_n_backends(sched);
         if (n > 0) ggml_backend_synchronize(ggml_backend_sched_get_backend(sched, 0));
     }
-    fprintf(stderr, "qwen3_tts: codec: compute done (status=%d)\n", (int)st); fflush(stderr);
+    //fprintf(stderr, "qwen3_tts: codec: compute done (status=%d)\n", (int)st); fflush(stderr);
     if (st != GGML_STATUS_SUCCESS) {
         return nullptr;
     }
 
     ggml_tensor* out = ggml_graph_get_tensor(gf, "pcm");
     int n_samples = (int)ggml_nelements(out);
-    fprintf(stderr, "qwen3_tts: codec: n_samples=%d, malloc...\n", n_samples); fflush(stderr);
+    //fprintf(stderr, "qwen3_tts: codec: n_samples=%d, malloc...\n", n_samples); fflush(stderr);
     float* pcm = (float*)malloc((size_t)n_samples * sizeof(float));
     if (!pcm) {
         return nullptr;
     }
     ggml_backend_tensor_get(out, pcm, 0, (size_t)n_samples * sizeof(float));
-    fprintf(stderr, "qwen3_tts: codec: done\n"); fflush(stderr);
+    //fprintf(stderr, "qwen3_tts: codec: done\n"); fflush(stderr);
     if (out_n_samples) {
         *out_n_samples = n_samples;
     }
