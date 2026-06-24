@@ -5052,7 +5052,7 @@ extern "C" struct qwen3_tts_context* qwen3_tts_init_codec_only(const char* codec
     // ggml_backend_sched_new requires last backend to be CPU.
     {
         ggml_backend_t backends[2] = {c->backend, c->backend_cpu};
-        c->sched = ggml_backend_sched_new(backends, nullptr, 2, 2097152, false, false);
+        c->sched = ggml_backend_sched_new(backends, nullptr, 2, 16384, false, false);
     }
 
     return c;
@@ -5256,7 +5256,7 @@ extern "C" struct qwen3_tts_context* qwen3_tts_init_from_file(const char* path_m
         if (c->backend_cpu && c->backend_cpu != c->backend) {
             backends[n_be++] = c->backend_cpu;
         }
-        c->sched = ggml_backend_sched_new(backends, nullptr, n_be, 2097152, false, false);
+        c->sched = ggml_backend_sched_new(backends, nullptr, n_be, 16384, false, false);
         if (c->backend_cpu && c->backend_cpu != c->backend) {
             ggml_backend_t cp_backends[1] = {c->backend_cpu};
             c->cp_sched = ggml_backend_sched_new(cp_backends, nullptr, 1, 4096, false, false);
@@ -6269,7 +6269,7 @@ static void qwen3_tts_reset_scratch_sched(qwen3_tts_context* c) {
         backends[n_be++] = c->backend;
         if (c->backend_cpu && c->backend_cpu != c->backend)
             backends[n_be++] = c->backend_cpu;
-        c->sched = ggml_backend_sched_new(backends, nullptr, n_be, 2097152, false, false);
+        c->sched = ggml_backend_sched_new(backends, nullptr, n_be, 16384, false, false);
     }
 }
 
