@@ -92,7 +92,7 @@ class TtsEngine:
         return data
 
     @classmethod
-    def synth(cls, text):
+    def synth(cls, text, temperature=0.0):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(120)
@@ -100,6 +100,7 @@ class TtsEngine:
 
             payload = text.encode("utf-8")
             sock.sendall(struct.pack(">i", len(payload)))
+            sock.sendall(struct.pack(">f", temperature))
             sock.sendall(payload)
 
             hdr = cls._recvn(sock, 4)

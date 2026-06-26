@@ -206,16 +206,17 @@ class TtsEngine:
         return data
 
     @classmethod
-    def synth(cls, text):
+    def synth(cls, text, temperature=0.0):
         """Send text to server, return float32 PCM array. Raises on error."""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(120)
             sock.connect((SERVER_HOST, SERVER_PORT))
 
-            # Send: 4-byte big-endian length + UTF-8 text
+            # Send: 4-byte big-endian length + 4-byte temperature + UTF-8 text
             payload = text.encode("utf-8")
             sock.sendall(struct.pack(">i", len(payload)))
+            sock.sendall(struct.pack(">f", temperature))
             sock.sendall(payload)
 
             # Read response: 4-byte n_samples + float32 PCM
@@ -253,17 +254,9 @@ class TtsEngine:
 class SettingsDialog(QDialog):
     def __init__(self, parent, cfg):
         super().__init__(parent); self._c = cfg
-        self.setWindowTitle("设置"); self.setFixedSize(440, 200)
+        self.setWindowTitle("设置"); self.setFixedSize(440, 250)
         self.setStyleSheet(QSS)
         lay = QVBoxLayout(self); lay.setSpacing(10)
-
-        ## speed UI disabled
-        ## row = QHBoxLayout(); row.addWidget(QLabel("语速"))
-        ## self._sp = QSlider(Qt.Orientation.Horizontal); self._sp.setRange(50, 200)
-        ## self._sp.setValue(int(cfg.get("speed", 1.0) * 100))
-        ## self._sp_lbl = QLabel(f"{cfg.get('speed', 1.0):.1f}x")
-        ## self._sp.valueChanged.connect(lambda v: self._sp_lbl.setText(f"{v / 100:.1f}x"))
-        ## row.addWidget(self._sp); row.addWidget(self._sp_lbl); lay.addLayout(row)
 
         row = QHBoxLayout(); row.addWidget(QLabel("音量"))
         self._vo = QSlider(Qt.Orientation.Horizontal); self._vo.setRange(0, 150)
@@ -272,11 +265,18 @@ class SettingsDialog(QDialog):
         self._vo.valueChanged.connect(lambda v: self._vo_lbl.setText(f"{v}%"))
         row.addWidget(self._vo); row.addWidget(self._vo_lbl); lay.addLayout(row)
 
+        row2 = QHBoxLayout(); row2.addWidget(QLabel("温度"))
+        self._tp = QSlider(Qt.Orientation.Horizontal); self._tp.setRange(0, 150)
+        self._tp.setValue(int(cfg.get("temperature", 0.0) * 100))
+        self._tp_lbl = QLabel(f"{cfg.get('temperature', 0.0):.2f}")
+        self._tp.valueChanged.connect(lambda v: self._tp_lbl.setText(f"{v / 100:.2f}"))
+        row2.addWidget(self._tp); row2.addWidget(self._tp_lbl); lay.addLayout(row2)
+
         save = QPushButton("保存设置"); save.clicked.connect(self._sv); lay.addWidget(save)
 
     def _sv(self):
-        ## self._c["speed"] = self._sp.value() / 100  # speed disabled
         self._c["volume"] = self._vo.value() / 100
+        self._c["temperature"] = self._tp.value() / 100
         save_cfg(self._c); self.accept()
 
 
@@ -890,7 +890,8 @@ class ReaderWin(QMainWindow):
                         tag = sv.get("fish_tag", "")
                         if tag and sv.get("model_type", "") == "Fish S2":
                             txt = tag + txt
-                        pcm = TtsEngine.synth(txt)
+                        temperature = cfg.get("temperature", 0.0)
+                        pcm = TtsEngine.synth(txt, temperature=temperature)
                         if self._gid != gid: return
                         pcm = np.clip(pcm, -1, 1)
                         with self._wavs_lock:
