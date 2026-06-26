@@ -42,7 +42,7 @@ static std::string  g_ref_audio;
 static std::string  g_ref_text;
 static std::string  g_cv_speaker;
 static std::string  g_text_lang     = "auto";
-static float        g_speed         = 1.0f;
+static float        g_temperature   = 0.0f;
 static int          g_port          = 9988;
 static bool         g_xvec_only     = false;
 
@@ -106,16 +106,17 @@ static bool load_model() {
     return true;
 }
 
-static bool synth_one(const char* text, std::vector<float>& pcm) {
+static bool synth_one(const char* text, float temperature, std::vector<float>& pcm) {
     int n_samples = 0;
     float* raw = nullptr;
-    fprintf(stderr, "[qwen3tts_server] synth: '%s'\n", text); fflush(stderr);
+    fprintf(stderr, "[qwen3tts_server] synth: '%s' temperature=%.2f\n", text, temperature); fflush(stderr);
     {
         std::lock_guard<std::mutex> lock(g_mutex);
+        if (temperature > 0.0f)
+            qwen3_tts_set_temperature(g_ctx, temperature);
         fprintf(stderr, "[qwen3tts_server] calling qwen3_tts_synthesize...\n"); fflush(stderr);
         raw = qwen3_tts_synthesize(g_ctx, text, &n_samples);
         fprintf(stderr, "[qwen3tts_server] synthesize returned raw=%p n_samples=%d\n", (void*)raw, n_samples); fflush(stderr);
-        // qwen3_tts_sync(g_ctx);  // drain GPU command queue before next synthesis
     }
     if (!raw || n_samples <= 0) return false;
     pcm.assign(raw, raw + n_samples);
@@ -128,18 +129,26 @@ static void handle_client(SOCKET client_fd) {
     int32_t text_len_be = 0;
     int nr = recv(client_fd, (char*)&text_len_be, 4, MSG_WAITALL);
     if (nr != 4) { closesocket(client_fd); return; }
-    int32_t text_len = ntohl(text_len_be);  // network byte order
+    int32_t text_len = ntohl(text_len_be);
     if (text_len <= 0 || text_len > 10000) { closesocket(client_fd); return; }
+
+    // Read 4-byte temperature (big-endian float32)
+    int32_t temp_be = 0;
+    nr = recv(client_fd, (char*)&temp_be, 4, MSG_WAITALL);
+    if (nr != 4) { closesocket(client_fd); return; }
+    int32_t temp_host = ntohl(temp_be);
+    float temperature;
+    memcpy(&temperature, &temp_host, sizeof(float));
 
     std::string text(text_len, '\0');
     nr = recv(client_fd, &text[0], text_len, MSG_WAITALL);
     if (nr != text_len) { closesocket(client_fd); return; }
 
-    fprintf(stderr, "[qwen3tts_server] received text: '%s' (%d bytes)\n", text.c_str(), text_len); fflush(stderr);
+    fprintf(stderr, "[qwen3tts_server] received text: '%s' (%d bytes) temp=%.2f\n", text.c_str(), text_len, temperature); fflush(stderr);
 
     // Synthesize
     std::vector<float> pcm;
-    if (!synth_one(text.c_str(), pcm)) {
+    if (!synth_one(text.c_str(), temperature, pcm)) {
         fprintf(stderr, "[qwen3tts_server] synth_one failed\n"); fflush(stderr);
         int32_t err = htonl(-1);
         send_all(client_fd, (const char*)&err, 4);
@@ -232,8 +241,6 @@ int main(int argc, char** argv) {
             g_text_lang = argv[++i];
         else if (!strcmp(argv[i], "--xvec-only"))
             g_xvec_only = true;
-        else if (!strcmp(argv[i], "--speed") && i + 1 < argc)
-            g_speed = (float)atof(argv[++i]);
     }
 
     if (!g_talker_path || !g_codec_path) {

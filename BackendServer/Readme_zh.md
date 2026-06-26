@@ -5,8 +5,8 @@ Fish S2 Pro 模型支持 (fish2_server) 移植自 rodrigomatta 的 [s2.cpp](http
 ## 模型下载
 
 **Qwen3-TTS (qwen3tts_server):**
-- Talker: [cstr/qwen3-tts-1.7b-base-GGUF](https://huggingface.co/cstr/qwen3-tts-1.7b-base-GGUF)
-- Codec: [cstr/qwen3-tts-tokenizer-12hz-GGUF](https://huggingface.co/cstr/qwen3-tts-tokenizer-12hz-GGUF)
+- Talker: [cstr/qwen3-tts-1.7b-base-GGUF](https://hf-mirror.com/cstr/qwen3-tts-1.7b-base-GGUF)
+- Codec: [cstr/qwen3-tts-tokenizer-12hz-GGUF](https://hf-mirror.com/cstr/qwen3-tts-tokenizer-12hz-GGUF)
 
 **Fish S2 Pro (fish2_server):**
 - Model: [rodrigomt/s2-pro-gguf](https://huggingface.co/rodrigomt/s2-pro-gguf)

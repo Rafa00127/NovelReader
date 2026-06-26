@@ -107,12 +107,13 @@ class TtsEngine:
         return data
 
     @classmethod
-    def synth(cls, text, port=9988):
+    def synth(cls, text, port=9988, temperature=0.0):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(120)
         sock.connect((SERVER_HOST, port))
         payload = text.encode("utf-8")
         sock.sendall(struct.pack(">i", len(payload)))
+        sock.sendall(struct.pack(">f", temperature))
         sock.sendall(payload)
         hdr = cls._recvn(sock, 4)
         if len(hdr) < 4:
