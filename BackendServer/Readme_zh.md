@@ -140,6 +140,4 @@ def recvn(sock, n):
     return buf
 ```
 
-### 计划
 
-以后可能加上真流式功能，至少qwen3tts是已经有现成的实现方法可以移植过来
