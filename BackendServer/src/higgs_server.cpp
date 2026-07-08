@@ -14,11 +14,10 @@
 #include "dr_wav.h"
 
 #ifdef _WIN32
-#include <windows.h>
-#include <shellapi.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <shellapi.h>
 #pragma comment(lib, "ws2_32.lib")
 #else
 #include <arpa/inet.h>
