@@ -203,6 +203,7 @@ if (NOT TARGET ggml)
     # ... otherwise assume ggml is added by a parent CMakeLists.txt
 endif()
 add_subdirectory(src)
+add_subdirectory(tools/higgs_quantize)
 
 #
 # install

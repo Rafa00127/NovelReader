@@ -107,7 +107,7 @@ class TtsEngine:
         return data
 
     @classmethod
-    def synth(cls, text, port=9988, temperature=0.0):
+    def synth(cls, text, port=9988, temperature=0.9):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(120)
         sock.connect((SERVER_HOST, port))
@@ -152,14 +152,40 @@ class ModelConfigDialog(QDialog):
 
         self._model_type = QComboBox()
         _row("模型类型", self._model_type)
-        self._model_type.addItems(["Qwen3-TTS", "Fish S2"])
-        self._model_type.setCurrentText(sv.get("model_type", "Qwen3-TTS"))
+        self._model_type.addItems(["Higgs TTS", "Qwen3-TTS", "Fish S2"])
+        self._model_type.setCurrentText(sv.get("model_type", "Higgs TTS"))
         self._model_type.currentTextChanged.connect(self._on_model_type)
         lay.addWidget(self._model_type)
 
         # Qwen
         self._qwen_box = QWidget()
         ql = QVBoxLayout(self._qwen_box); ql.setContentsMargins(0, 0, 0, 0)
+        # Higgs
+        self._higgs_box = QWidget()
+        hl = QVBoxLayout(self._higgs_box); hl.setContentsMargins(0, 0, 0, 0)
+        self._higgs_exe = QLineEdit(sv.get("higgs_exe", "higgs_server.exe"))
+        r = QHBoxLayout(); r.addWidget(QLabel("Server 路径")); r.addWidget(self._higgs_exe)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br_exe(self._higgs_exe)); r.addWidget(b); hl.addLayout(r)
+        self._higgs_model = QLineEdit(sv.get("higgs_model", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("模型 GGUF")); r.addWidget(self._higgs_model)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._higgs_model)); r.addWidget(b); hl.addLayout(r)
+        self._higgs_ref_wav = QLineEdit(sv.get("higgs_ref_wav", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("参考音频")); r.addWidget(self._higgs_ref_wav)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._higgs_ref_wav)); r.addWidget(b); hl.addLayout(r)
+        self._higgs_ref_text = QLineEdit(sv.get("higgs_ref_text", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("参考文本")); r.addWidget(self._higgs_ref_text)
+        hl.addLayout(r)
+        self._higgs_temp = QLineEdit(sv.get("higgs_temp", "0.9"))
+        self._higgs_temp.setPlaceholderText("temperature")
+        r = QHBoxLayout(); r.addWidget(QLabel("Temperature")); r.addWidget(self._higgs_temp)
+        hl.addLayout(r)
+        self._higgs_seed = QLineEdit(sv.get("higgs_seed", "42"))
+        self._higgs_seed.setPlaceholderText("seed")
+        r = QHBoxLayout(); r.addWidget(QLabel("Seed")); r.addWidget(self._higgs_seed)
+        hl.addLayout(r)
+        lay.addWidget(self._higgs_box)
+
+        # Qwen
         self._qwen_exe = QLineEdit(sv.get("exe", "qwen3tts_server.exe"))
         r = QHBoxLayout(); r.addWidget(QLabel("Server 路径")); r.addWidget(self._qwen_exe)
         b = QPushButton("浏览"); b.clicked.connect(lambda: self._br_exe(self._qwen_exe)); r.addWidget(b); ql.addLayout(r)
@@ -247,9 +273,9 @@ class ModelConfigDialog(QDialog):
         if p[0]: w.setText(p[0])
 
     def _on_model_type(self, mt):
-        is_qwen = (mt == "Qwen3-TTS")
-        self._qwen_box.setVisible(is_qwen)
-        self._fish_box.setVisible(not is_qwen)
+        self._higgs_box.setVisible(mt == "Higgs TTS")
+        self._qwen_box.setVisible(mt == "Qwen3-TTS")
+        self._fish_box.setVisible(mt == "Fish S2")
 
     def _on_qwen_mode(self, mode):
         self._qwen_base.setVisible(mode == "Base")
@@ -259,6 +285,9 @@ class ModelConfigDialog(QDialog):
         sv = {
             "model_type": self._model_type.currentText(),
             "port": self._port.text(),
+            "higgs_exe": self._higgs_exe.text(), "higgs_model": self._higgs_model.text(),
+            "higgs_ref_wav": self._higgs_ref_wav.text(), "higgs_ref_text": self._higgs_ref_text.text(),
+            "higgs_temp": self._higgs_temp.text(), "higgs_seed": self._higgs_seed.text(),
             "exe": self._qwen_exe.text(), "talker": self._talker.text(),
             "codec": self._codec.text(),
             "mode": self._mode.currentText(), "lang": self._lang.currentText(),
@@ -274,7 +303,15 @@ class ModelConfigDialog(QDialog):
         save_cfg(self._c)
 
         is_qwen = (sv["model_type"] == "Qwen3-TTS")
-        if is_qwen:
+        is_higgs = (sv["model_type"] == "Higgs TTS")
+        if is_higgs:
+            exe = (sv.get("higgs_exe") or "").strip() or "higgs_server.exe"
+            args = [exe, "--model", sv["higgs_model"], "--ref-wav", sv["higgs_ref_wav"],
+                    "--port", sv.get("port", "9989"),
+                    "--temperature", sv.get("higgs_temp", "0.9"),
+                    "--seed", sv.get("higgs_seed", "42")]
+            if sv.get("higgs_ref_text"): args += ["--ref-text", sv["higgs_ref_text"]]
+        elif is_qwen:
             exe = (sv.get("exe") or "").strip() or "qwen3tts_server.exe"
             args = [exe, "--model", sv["talker"], "--codec", sv["codec"],
                     "--port", sv["port"], "--lang", sv.get("lang", "auto")]
@@ -381,6 +418,14 @@ class SimpleTtsGui(QMainWindow):
         self._synth_btn.clicked.connect(self._synthesize)
         btn_row.addWidget(self._synth_btn)
 
+        btn_row.addWidget(QLabel("  Temp"))
+        self._temp_spin = QDoubleSpinBox()
+        self._temp_spin.setRange(0.1, 2.0); self._temp_spin.setSingleStep(0.05)
+        self._temp_spin.setValue(float(self._c.get("temperature", 0.9)))
+        self._temp_spin.setDecimals(2); self._temp_spin.setFixedWidth(70)
+        self._temp_spin.valueChanged.connect(lambda v: self._c.update({"temperature": v}) or save_cfg(self._c))
+        btn_row.addWidget(self._temp_spin)
+
         self._play_btn = QPushButton("▶ 试听")
         self._play_btn.setEnabled(False)
         self._play_btn.clicked.connect(self._toggle_play)
@@ -451,6 +496,7 @@ class SimpleTtsGui(QMainWindow):
 
         sv = self._c.get("server", {})
         port = int(sv.get("port", SERVER_PORT))
+        temperature = self._temp_spin.value()
 
         # Fish S2 tag prepend
         synth_text = text
@@ -461,7 +507,7 @@ class SimpleTtsGui(QMainWindow):
 
         def _run():
             try:
-                pcm = TtsEngine.synth(synth_text, port)
+                pcm = TtsEngine.synth(synth_text, port, temperature)
                 self._pcm = pcm
                 duration = len(pcm) / self._sample_rate
                 self._synth_btn.setText("🎤 重新合成")

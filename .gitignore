@@ -13,7 +13,6 @@ Backend/build/
 BackendServer/build/
 CMakeCache.txt
 CMakeFiles/
-# *.cmake
 
 # Models (too large for GitHub)
 *.gguf
@@ -23,16 +22,17 @@ CMakeFiles/
 .vscode/
 .idea/
 
-#agent
+# agent
 .crush/
 AGENTS.md
-ClAUDE.md
+CLAUDE.md
 
 .cache/
 # Backend
 Backend/*.bat
 BackendServer/*.bat
 BackendServer/patches/
+BackendServer/some_docs/
 
 # Reader demo
 Reader_Demo/dll/
@@ -41,11 +41,13 @@ Reader_Demo/*.bat
 Reader_Demo/reader_config.json
 Reader_Demo/tts_gui_config.json
 Reader_Demo/*.wav
+Reader_Demo/*.pyw
 
 # OS
 .DS_Store
 Thumbs.db
-## some notes
-BackendServer/testing_scripts
-BackendServer/some_docs
+
+# notes
 future_ideas.md
+BackendServer/testing_scripts/
+BackendServer/some_docs/

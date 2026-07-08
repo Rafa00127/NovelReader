@@ -26,6 +26,8 @@
 #include "ggml-cuda/fattn.cuh"
 #include "ggml-cuda/getrows.cuh"
 #include "ggml-cuda/im2col.cuh"
+#include "ggml-cuda/im2col_rafa.cuh"
+#include "ggml-cuda/snake_1d.cuh"
 #include "ggml-cuda/mmf.cuh"
 #include "ggml-cuda/mmq.cuh"
 #include "ggml-cuda/mmvf.cuh"
@@ -2942,6 +2944,12 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_IM2COL_3D:
             ggml_cuda_op_im2col_3d(ctx, dst);
             break;
+        case GGML_OP_IM2COL_RAFA:
+            ggml_cuda_op_im2col_rafa(ctx, dst);
+            break;
+        case GGML_OP_SNAKE_1D:
+            ggml_cuda_op_snake_1d(ctx, dst);
+            break;
         case GGML_OP_CONV_2D:
             ggml_cuda_op_conv2d(ctx, dst);
             break;
@@ -5244,6 +5252,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
         }
         case GGML_OP_IM2COL:
         case GGML_OP_IM2COL_3D:
+        case GGML_OP_IM2COL_RAFA:
+        case GGML_OP_SNAKE_1D:
         case GGML_OP_CONV_2D:
         case GGML_OP_CONV_2D_DW:
         case GGML_OP_CONV_TRANSPOSE_2D:

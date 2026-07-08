@@ -13,7 +13,7 @@ from PyQt6.QtGui import *
 
 # ═══════════ 全局常量 ═══════════
 CONFIG = os.path.join(_FILE_DIR, "reader_config.json")
-SAMPLE_RATES = {"qwen": 24000, "fish": 44100}
+SAMPLE_RATES = {"higgs": 24000, "qwen": 24000, "fish": 44100}
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 9988
 
@@ -21,6 +21,8 @@ CHAPTER_RE = [
     re.compile(r'^第[\d一二三四五六七八九十百千万]*章'),
     re.compile(r'^第[\d一二三四五六七八九十百千万]*[节回]'),
     re.compile(r'^Chapter\s+\d+', re.IGNORECASE),
+    re.compile(r'^Canto\s+[MDCLXVI\d]+', re.IGNORECASE),
+    re.compile(r'^Canto\s+(of\s+)?the\s+\w+', re.IGNORECASE),
     re.compile(r'^第\s*\d+\s*章'), re.compile(r'^\d+[\.、]\s+\S'),
     re.compile(r'^[一二三四五六七八九十百千万]+、'),
 ]
@@ -145,8 +147,7 @@ def parse_book(fp):
     if buf: ch.append((title, buf))
     return ch
 
-def split_text(text):
-    MAX_LEN = 45
+def split_text(text, max_len=45):
     text = re.sub(r'…{2,}', '…', text)
     raw = [s for s in re.split(r'(?<=[.。!！?？\n])', text) if s.strip()]
     _closing_q = r'」』"''”」”＂'
@@ -163,13 +164,13 @@ def split_text(text):
         seg = re.sub(_lead_noise, '', seg)
         if not re.search(r'[\w一-鿿]', seg):
             continue
-        if len(seg) <= MAX_LEN:
+        if len(seg) <= max_len:
             final.append(seg)
         else:
             parts = re.split(r'(?<=[，,;；、])', seg)
             buf = ""
             for p in parts:
-                if len(buf) + len(p) <= MAX_LEN or len(buf) == 0:
+                if len(buf) + len(p) <= max_len or len(buf) == 0:
                     buf += p
                 else:
                     if buf.strip(): final.append(buf.strip())
@@ -283,7 +284,7 @@ class SettingsDialog(QDialog):
 class ServerDialog(QDialog):
     def __init__(self, parent, cfg):
         super().__init__(parent); self._c = cfg
-        self.setWindowTitle("模型服务器"); self.setFixedSize(620, 500)
+        self.setWindowTitle("模型服务器"); self.setFixedSize(620, 620)
         self.setStyleSheet(QSS)
         lay = QVBoxLayout(self); lay.setSpacing(6)
         sv = cfg.get("server", {})
@@ -296,14 +297,36 @@ class ServerDialog(QDialog):
         # Model type
         self._model_type = QComboBox()
         _row("模型类型", self._model_type)
-        self._model_type.addItems(["Qwen3-TTS", "Fish S2"])
-        self._model_type.setCurrentText(sv.get("model_type", "Qwen3-TTS"))
+        self._model_type.addItems(["Higgs TTS", "Qwen3-TTS", "Fish S2"])
         self._model_type.currentTextChanged.connect(self._on_model_type)
         lay.addWidget(self._model_type)
 
         # ── Qwen 字段 ──
         self._qwen_box = QWidget()
         ql = QVBoxLayout(self._qwen_box); ql.setContentsMargins(0, 0, 0, 0)
+        # Higgs
+        self._higgs_box = QWidget()
+        hl = QVBoxLayout(self._higgs_box); hl.setContentsMargins(0, 0, 0, 0)
+        self._higgs_exe = QLineEdit(sv.get("higgs_exe", "higgs_server.exe"))
+        r = QHBoxLayout(); r.addWidget(QLabel("Server 路径")); r.addWidget(self._higgs_exe)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br_exe(self._higgs_exe)); r.addWidget(b); hl.addLayout(r)
+        self._higgs_model = QLineEdit(sv.get("higgs_model", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("模型 GGUF")); r.addWidget(self._higgs_model)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._higgs_model)); r.addWidget(b); hl.addLayout(r)
+        self._higgs_ref_wav = QLineEdit(sv.get("higgs_ref_wav", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("参考音频")); r.addWidget(self._higgs_ref_wav)
+        b = QPushButton("浏览"); b.clicked.connect(lambda: self._br(self._higgs_ref_wav)); r.addWidget(b); hl.addLayout(r)
+        self._higgs_ref_text = QLineEdit(sv.get("higgs_ref_text", ""))
+        r = QHBoxLayout(); r.addWidget(QLabel("参考文本")); r.addWidget(self._higgs_ref_text)
+        hl.addLayout(r)
+        self._higgs_temp = QLineEdit(sv.get("higgs_temp", "0.9"))
+        r = QHBoxLayout(); r.addWidget(QLabel("Temperature")); r.addWidget(self._higgs_temp)
+        hl.addLayout(r)
+        self._higgs_seed = QLineEdit(sv.get("higgs_seed", "42"))
+        r = QHBoxLayout(); r.addWidget(QLabel("Seed")); r.addWidget(self._higgs_seed)
+        hl.addLayout(r)
+        lay.addWidget(self._higgs_box)
+
         self._qwen_exe = QLineEdit(sv.get("exe", "qwen3tts_server.exe"))
         r = QHBoxLayout(); r.addWidget(QLabel("Server 路径")); r.addWidget(self._qwen_exe)
         b = QPushButton("浏览"); b.clicked.connect(lambda: self._br_exe(self._qwen_exe)); r.addWidget(b); ql.addLayout(r)
@@ -382,7 +405,11 @@ class ServerDialog(QDialog):
         cvl.addLayout(cv_spk_row)
         lay.addWidget(self._cv_box)
 
-        self._on_model_type(sv.get("model_type", "Qwen3-TTS"))
+        # Ensure only one model config box is visible at startup
+        self._higgs_box.setVisible(False)
+        self._qwen_box.setVisible(False)
+        self._fish_box.setVisible(False)
+        self._model_type.setCurrentText(sv.get("model_type", "Higgs TTS"))
         self._on_mode(sv.get("mode", "Base"))
 
         btn = QPushButton("🚀 启动 Server")
@@ -401,9 +428,10 @@ class ServerDialog(QDialog):
         if p[0]: w.setText(p[0])
 
     def _on_model_type(self, mt):
+        self._higgs_box.setVisible(mt == "Higgs TTS")
+        self._qwen_box.setVisible(mt == "Qwen3-TTS")
+        self._fish_box.setVisible(mt == "Fish S2")
         is_qwen = (mt == "Qwen3-TTS")
-        self._qwen_box.setVisible(is_qwen)
-        self._fish_box.setVisible(not is_qwen)
         self._mode.setVisible(is_qwen)
         self._base_box.setVisible(is_qwen and self._mode.currentText() == "Base")
         self._cv_box.setVisible(is_qwen and self._mode.currentText() == "CustomVoice")
@@ -418,6 +446,9 @@ class ServerDialog(QDialog):
         sv = {
             "model_type": self._model_type.currentText(),
             "port": self._port.text(),
+            "higgs_exe": self._higgs_exe.text(), "higgs_model": self._higgs_model.text(),
+            "higgs_ref_wav": self._higgs_ref_wav.text(), "higgs_ref_text": self._higgs_ref_text.text(),
+            "higgs_temp": self._higgs_temp.text(), "higgs_seed": self._higgs_seed.text(),
             "exe": self._qwen_exe.text(),
             "talker": self._talker.text(),
             "codec": self._codec.text(),
@@ -437,8 +468,15 @@ class ServerDialog(QDialog):
         self._c["server"] = sv
         save_cfg(self._c)
 
-        is_qwen = (sv["model_type"] == "Qwen3-TTS")
-        if is_qwen:
+        is_higgs = (sv["model_type"] == "Higgs TTS")
+        if is_higgs:
+            exe = (sv.get("higgs_exe") or "").strip() or "higgs_server.exe"
+            args = [exe, "--model", sv["higgs_model"], "--ref-wav", sv["higgs_ref_wav"],
+                    "--port", sv.get("port", "9989"),
+                    "--temperature", sv.get("higgs_temp", "0.9"),
+                    "--seed", sv.get("higgs_seed", "42")]
+            if sv.get("higgs_ref_text"): args += ["--ref-text", sv["higgs_ref_text"]]
+        elif is_qwen:
             exe = (sv.get("exe") or "").strip() or "qwen3tts_server.exe"
             args = [exe, "--model", sv["talker"], "--codec", sv["codec"],
                     "--port", sv["port"], "--lang", sv["lang"]]
@@ -505,6 +543,7 @@ class ReaderWin(QMainWindow):
         self._nxt = 0; self._total = 0; self._save_sent = 0; self._gid = 0
         self._synth_done = threading.Event(); self._synth_done.set()
         self._synth_pause = threading.Event(); self._synth_pause.set()
+        self._synth_more = threading.Event(); self._synth_more.set()  # signal: OK to synth more
         self._sync_scroll = False
 
         # Read server port and sample rate from saved config
@@ -565,6 +604,20 @@ class ReaderWin(QMainWindow):
         tb.addWidget(self._vol)
         self._vol_lbl = QLabel(f"{int(self._c.get('volume', 1.0) * 100)}%")
         tb.addWidget(self._vol_lbl)
+
+        tb.addWidget(QLabel(" ⏱"))
+        self._pref = QSpinBox(); self._pref.setRange(0, 20)
+        self._pref.setValue(int(self._c.get("higgs_prefetch", "3")))
+        self._pref.setFixedWidth(48)
+        self._pref.valueChanged.connect(lambda v: self._c.update({"higgs_prefetch": str(v)}) or save_cfg(self._c))
+        tb.addWidget(self._pref)
+
+        tb.addWidget(QLabel(" 📏"))
+        self._maxlen = QSpinBox(); self._maxlen.setRange(10, 200)
+        self._maxlen.setValue(int(self._c.get("max_len", 45)))
+        self._maxlen.setFixedWidth(56)
+        self._maxlen.valueChanged.connect(lambda v: self._c.update({"max_len": str(v)}) or save_cfg(self._c))
+        tb.addWidget(self._maxlen)
 
         tb.addStretch()
         self._chap_btn = self._tool_btn("📑", "目录", "目录", self._toggle_chap)
@@ -692,6 +745,7 @@ class ReaderWin(QMainWindow):
 
     def _on_scroll(self):
         if not self._chs: return
+        if self._ci < 0 or self._ci >= len(self._chs): return
         _, ps = self._chs[self._ci]
         if not ps: return
         sb = self._tx.verticalScrollBar()
@@ -727,7 +781,7 @@ class ReaderWin(QMainWindow):
         else: self._chap_popup.show()
 
     def _ri(self):
-        if self._chs:
+        if self._chs and 0 <= self._ci < len(self._chs):
             self._info.setText(f"{self._chs[self._ci][0]} · 段{self._pi + 1}")
             self._loc.setText(f"章{self._ci + 1}/{len(self._chs)}")
 
@@ -860,7 +914,7 @@ class ReaderWin(QMainWindow):
         self._save_sent = 0; self._pi = para_start
         self._ri()
         text = "".join(ps[para_start:]); cfg = self._c
-        sens = split_text(text)
+        sens = split_text(text, max_len=int(cfg.get("max_len", 45)))
         self._sens_para_map = []
         acc, pi = 0, para_start
         for i, s in enumerate(sens):
@@ -881,12 +935,22 @@ class ReaderWin(QMainWindow):
 
         def _seq():
             try:
+                sv = cfg.get("server", {})
+                prefetch = int(sv.get("higgs_prefetch", 3))
                 for idx, txt in enumerate(sens):
                     if self._gid != gid: return
                     self._synth_pause.wait()
                     if self._gid != gid: return
+                    # Prefetch limit: pause if we're too far ahead of playback
+                    if prefetch > 0:
+                        while self._gid == gid:
+                            pending = idx - self._nxt + 1
+                            if pending <= prefetch:
+                                break
+                            self._synth_more.clear()
+                            self._synth_more.wait(0.2)
+                        if self._gid != gid: return
                     try:
-                        sv = cfg.get("server", {})
                         tag = sv.get("fish_tag", "")
                         if tag and sv.get("model_type", "") == "Fish S2":
                             txt = tag + txt
@@ -929,6 +993,7 @@ class ReaderWin(QMainWindow):
         idx = self._nxt - 1
         if idx > 0:
             with self._wavs_lock: self._wavs.pop(idx - 1, None)
+        self._synth_more.set()  # consumed one chunk — may need more
         if self._sync_scroll and self._total > 0 and idx < len(self._sens):
             doc = self._tx.document()
             needle = self._sens[idx][:30]

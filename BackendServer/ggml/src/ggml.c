@@ -1033,6 +1033,8 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "IM2COL",
     "IM2COL_BACK",
     "IM2COL_3D",
+    "IM2COL_RAFA",
+    "SNAKE_1D",
     "CONV_2D",
     "CONV_3D",
     "CONV_2D_DW",
@@ -1085,7 +1087,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "AA_SNAKE_BETA",
 };
 
-static_assert(GGML_OP_COUNT == 99, "GGML_OP_COUNT != 99");
+static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 100");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1200,7 +1202,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "aa_snake_beta(x, log_a, log_b, usf, dsf)",
 };
 
-static_assert(GGML_OP_COUNT == 99, "GGML_OP_COUNT != 99");
+static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 100");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -4496,6 +4498,49 @@ struct ggml_tensor * ggml_im2col(
     result->op     = GGML_OP_IM2COL;
     result->src[0] = a;
     result->src[1] = b;
+
+    return result;
+}
+
+// im2col for [C, T_in] channel-first input → [C*K, T_out]
+struct ggml_tensor * ggml_im2col_rafa(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * x,     // [C, T_in]
+        int K, int s0, int p0, int d0,
+        enum ggml_type        dst_type) {
+    const int C    = (int)x->ne[0];
+    const int T_in = (int)x->ne[1];
+
+    const int T_out = (int)ggml_calc_conv_output_size(T_in, K, s0, p0, d0);
+    GGML_ASSERT(T_out > 0 && "input too small for kernel");
+
+    const int64_t ne[4] = { (int64_t)C * K, T_out, 1, 1 };
+    struct ggml_tensor * result = ggml_new_tensor(ctx, dst_type, 4, ne);
+    int32_t params[] = { K, s0, p0, d0 };
+    ggml_set_op_params(result, params, sizeof(params));
+
+    result->op     = GGML_OP_IM2COL_RAFA;
+    result->src[0] = x;
+    return result;
+}
+
+// ggml_snake_1d
+
+struct ggml_tensor * ggml_snake_1d(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * x,
+        struct ggml_tensor  * alpha) {
+    GGML_ASSERT(ggml_is_matrix(x));
+    GGML_ASSERT(ggml_is_vector(alpha));
+    GGML_ASSERT(x->ne[1] == alpha->ne[0]);     // channels in ne[1] (time-first layout)
+    GGML_ASSERT(x->type == GGML_TYPE_F32);
+
+    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F32, GGML_MAX_DIMS, x->ne);
+    ggml_format_name(result, "%s (snake_1d)", x->name);
+
+    result->op     = GGML_OP_SNAKE_1D;
+    result->src[0] = x;
+    result->src[1] = alpha;
 
     return result;
 }

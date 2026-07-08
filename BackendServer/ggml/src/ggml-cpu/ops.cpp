@@ -6187,6 +6187,99 @@ void ggml_compute_forward_im2col(const ggml_compute_params* params, ggml_tensor*
     }
 }
 
+// ggml_compute_forward_im2col_rafa
+// src0: x(channel, t) [C, T_in] (ne[0]=C fastest, ne[1]=T_in)
+//       ggml pipeline natural output, corresponds to PyTorch x [B, C, T] with T fastest.
+// dst:  output [C*K, T_out] (ne[0]=C*K, ne[1]=T_out)
+// op_params: [K, s0, p0, d0]
+void ggml_compute_forward_im2col_rafa(const ggml_compute_params* params, ggml_tensor* dst) {
+    const ggml_tensor* src = dst->src[0];
+
+    GGML_ASSERT(src->type == GGML_TYPE_F32);
+
+    const int32_t* p = (const int32_t*)(dst->op_params);
+    const int K  = p[0];
+    const int s0 = p[1];
+    const int p0 = p[2];
+    const int d0 = p[3];
+
+    const int C    = (int)src->ne[0];
+    const int T_in = (int)src->ne[1];
+    const int T_out = (int)dst->ne[1];
+    const int CK = C * K;
+
+    const float* __restrict__ x = (const float*)src->data;
+
+    const int ith = params->ith;
+    const int nth = params->nth;
+
+    // split along T_out dimension
+    const int t0 = ( T_out * ith) / nth;
+    const int t1 = ((int64_t)T_out * (ith + 1)) / nth;
+
+    if (dst->type == GGML_TYPE_F16) {
+        ggml_fp16_t* __restrict__ y = (ggml_fp16_t*)dst->data;
+        for (int t = t0; t < t1; t++) {
+            for (int ic_k = 0; ic_k < CK; ic_k++) {
+                const int ic = ic_k / K;
+                const int k  = ic_k % K;
+                const int inp = t * s0 - p0 + k * d0;
+                y[ic_k + t * CK] = (inp >= 0 && inp < T_in)
+                    ? ggml_fp32_to_fp16(x[ic + inp * C])
+                    : ggml_fp32_to_fp16(0.0f);
+            }
+        }
+    } else {
+        float* __restrict__ y = (float*)dst->data;
+        for (int t = t0; t < t1; t++) {
+            for (int ic_k = 0; ic_k < CK; ic_k++) {
+                const int ic = ic_k / K;
+                const int k  = ic_k % K;
+                const int inp = t * s0 - p0 + k * d0;
+                if (inp >= 0 && inp < T_in)
+                    y[ic_k + t * CK] = x[ic + inp * C];
+                else
+                    y[ic_k + t * CK] = 0.0f;
+            }
+        }
+    }
+}
+
+// ggml_compute_forward_snake_1d
+// src0: x [T, C] F32 (time-first, ne[0]=T), src1: alpha [C] F32
+// y = x + sin^2(alpha * x) / (alpha + 1e-9)
+// output: [T, C] F32, same shape as x
+void ggml_compute_forward_snake_1d(const ggml_compute_params* params, ggml_tensor* dst) {
+    const ggml_tensor* x     = dst->src[0];
+    const ggml_tensor* alpha = dst->src[1];
+
+    GGML_ASSERT(x->type == GGML_TYPE_F32);
+    GGML_ASSERT(alpha->type == GGML_TYPE_F32);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+
+    const int T = (int)x->ne[0];
+    const int C = (int)x->ne[1];
+    const int n = C * T;
+
+    const float* __restrict__ x_data = (const float*)x->data;
+    const float* __restrict__ a_data = (const float*)alpha->data;
+    float* __restrict__ y_data = (float*)dst->data;
+
+    const int ith = params->ith;
+    const int nth = params->nth;
+
+    const int i0 = (      n * ith) / nth;
+    const int i1 = ((int64_t)n * (ith + 1)) / nth;
+
+    for (int idx = i0; idx < i1; idx++) {
+        const int ic = idx / T;  // ne[0]=T, flat: t + c*T → c = idx/T
+        const float a = a_data[ic] + 1e-9f;
+        const float ax = a * x_data[idx];
+        const float s = sinf(ax);
+        y_data[idx] = x_data[idx] + s * s / a;
+    }
+}
+
 // ggml_compute_forward_im2col_back_f32
 
 void ggml_compute_forward_im2col_back_f32(const ggml_compute_params* params, ggml_tensor* dst) {

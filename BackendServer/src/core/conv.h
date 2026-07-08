@@ -138,7 +138,7 @@ static inline ggml_tensor* convt1d_crop(ggml_context* ctx, ggml_tensor* x, ggml_
 //
 // Inputs:
 //   x      : (Cin, T_in)  F32, channel-major.
-//   w_perm : (IC, K*OC)   F32, weight pre-permuted at load time.
+//   w_perm : (IC, K*OC)   F32, weight pre-permuted at load time or view+transpose in torch before writing into gguf.
 //   b      : (Cout,)      F32 or nullptr.
 //   stride : positive integer.
 //   K      : kernel size.

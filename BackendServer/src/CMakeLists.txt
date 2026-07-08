@@ -36,6 +36,52 @@ if(NOT MSVC)
     target_compile_options(qwen3_tts PRIVATE -O3)
 endif()
 
+# --- higgs_tts (static) -------------------------------------------------------
+add_library(higgs_tts STATIC
+    higgs_tts.h    higgs_tts.cpp
+    higgs_prefill.h higgs_prefill.cpp
+    higgs_decode.h  higgs_decode.cpp
+    higgs_BAR.h    higgs_BAR.cpp
+    higgs_rvq_encode.h
+)
+set_target_properties(higgs_tts PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(higgs_tts PUBLIC .)
+target_compile_definitions(higgs_tts PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_compile_features(higgs_tts PUBLIC cxx_std_17)
+target_link_libraries(higgs_tts PUBLIC crispasr-core ggml ggml-base ggml-cpu)
+if(TARGET ggml-hip)
+    target_link_libraries(higgs_tts PUBLIC ggml-hip)
+endif()
+if(NOT MSVC)
+    target_compile_options(higgs_tts PRIVATE -O3)
+endif()
+
+# --- higgs_cli ----------------------------------------------------------------
+add_executable(higgs_cli higgs_cli.cpp)
+target_compile_definitions(higgs_cli PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_include_directories(higgs_cli PRIVATE . ../include ../ggml/src)
+target_compile_features(higgs_cli PRIVATE cxx_std_17)
+target_link_libraries(higgs_cli PRIVATE higgs_tts crispasr-core ggml ggml-base ggml-cpu)
+if(TARGET ggml-hip)
+    target_link_libraries(higgs_cli PRIVATE ggml-hip)
+endif()
+if(NOT MSVC)
+    target_compile_options(higgs_cli PRIVATE -O3)
+endif()
+
+# --- higgs_server -------------------------------------------------------------
+add_executable(higgs_server higgs_server.cpp)
+target_compile_definitions(higgs_server PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_include_directories(higgs_server PRIVATE . ../include ../ggml/src)
+target_compile_features(higgs_server PRIVATE cxx_std_17)
+target_link_libraries(higgs_server PRIVATE higgs_tts crispasr-core ggml ggml-base ggml-cpu)
+if(TARGET ggml-hip)
+    target_link_libraries(higgs_server PRIVATE ggml-hip)
+endif()
+if(NOT MSVC)
+    target_compile_options(higgs_server PRIVATE -O3)
+endif()
+
 # --- qwen3tts_server ----------------------------------------------------------
 add_executable(qwen3tts_server qwen3tts_server.cpp)
 target_compile_definitions(qwen3tts_server PRIVATE _CRT_SECURE_NO_WARNINGS)

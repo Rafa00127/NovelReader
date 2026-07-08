@@ -531,6 +531,8 @@ extern "C" {
         GGML_OP_IM2COL,
         GGML_OP_IM2COL_BACK,
         GGML_OP_IM2COL_3D,
+        GGML_OP_IM2COL_RAFA,
+        GGML_OP_SNAKE_1D,
         GGML_OP_CONV_2D,
         GGML_OP_CONV_3D,
         GGML_OP_CONV_2D_DW,
@@ -2122,6 +2124,26 @@ extern "C" {
             int                   d1, // dilation height
             int                   d2, // dilation depth
             enum ggml_type        dst_type);
+
+    // im2col for [C, T] channel-first input (no transpose, no weight needed).
+    // x: [C, T_in], K: kernel size.  result: [C*K, T_out]
+    GGML_API struct ggml_tensor * ggml_im2col_rafa(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * x,     // input [C, T_in]
+            int                   K,     // kernel size
+            int                   s0,    // stride
+            int                   p0,    // pad
+            int                   d0,    // dilation
+            enum ggml_type        dst_type);
+
+    // Snake 1D activation: y = x + sin^2(alpha * x) / (alpha + 1e-9)
+    // x:     [T, C]  F32 — input (time-first, ne[0]=T)
+    // alpha: [C]     F32 — per-channel learnable parameter
+    // result: [T, C] F32 — same shape as x
+    GGML_API struct ggml_tensor * ggml_snake_1d(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * x,
+            struct ggml_tensor  * alpha);
 
     // a: [OC*IC, KD, KH, KW]
     // b: [N*IC, ID, IH, IW]
