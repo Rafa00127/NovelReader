@@ -11,6 +11,9 @@ Fish S2 Pro model support (fish2_server) is ported from [s2.cpp](https://github.
 **Fish S2 Pro (fish2_server):**
 - Model: [rodrigomt/s2-pro-gguf](https://huggingface.co/rodrigomt/s2-pro-gguf)
 
+**Higgs TTS (higgs_server):**
+- Model: [NeemaShioSe/HiggsTTS3.gguf](https://huggingface.co/NeemaShioSe/HiggsTTS3.gguf)
+
 Model conversion scripts and instructions can be found in the respective Hugging Face repos.
 
 ## Building (using AMD GPU + Windows as an example)
@@ -47,5 +50,8 @@ cmake --build build --config Release
 Output binaries are in `build/bin/`:
 - `qwen3tts_server.exe`
 - `fish2_server.exe`
+- `higgs_server.exe`
+- `higgs_cli.exe`
+- `higgs_quantize.exe`
 - `ggml.dll`, `ggml-hip.dll`, etc.
 
