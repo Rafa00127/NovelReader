@@ -26,6 +26,8 @@ CMakeFiles/
 #agent
 .crush/
 AGENTS.md
+ClAUDE.md
+
 .cache/
 # Backend
 Backend/*.bat
@@ -43,5 +45,7 @@ Reader_Demo/*.wav
 # OS
 .DS_Store
 Thumbs.db
-
-
+## some notes
+BackendServer/testing_scripts
+BackendServer/some_docs
+future_ideas.md
