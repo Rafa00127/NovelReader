@@ -14,6 +14,8 @@
 #include "dr_wav.h"
 
 #ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -239,8 +241,36 @@ static void server_loop() {
 #endif
 }
 
+// ── UTF-8 argv (Windows) ────────────────────────────────────────────────────
+#ifdef _WIN32
+static std::string utf16_to_utf8(const wchar_t* wstr) {
+    if (!wstr || !*wstr) return {};
+    int len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return {};
+    std::string out(len - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wstr, -1, &out[0], len, nullptr, nullptr);
+    return out;
+}
+static std::vector<std::string> get_utf8_argv() {
+    std::vector<std::string> args;
+    int argc; LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (!wargv) return args;
+    for (int i = 0; i < argc; i++) args.push_back(utf16_to_utf8(wargv[i]));
+    LocalFree(wargv);
+    return args;
+}
+#endif
+
 // ── main ────────────────────────────────────────────────────────────────────
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    auto utf8_args = get_utf8_argv();
+    int nargs = (int)utf8_args.size();
+    std::vector<const char*> cargs(nargs);
+    for (int i = 0; i < nargs; i++) cargs[i] = utf8_args[i].c_str();
+    argv = (char**)cargs.data();
+    argc = nargs;
+#endif
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--model") && i + 1 < argc)
             g_model_path = argv[++i];

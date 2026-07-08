@@ -1,12 +1,18 @@
-这里的 causal conv1d-transpose 实现基于 qwentts.cpp 的 [causal-trans-conv.h](https://github.com/ServeurpersoCom/qwentts.cpp/blob/master/src/causal-trans-conv.h)。
+Qwen3-TTS 支持 (qwen3tts_server) 基于 [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) 模型，使用 Apache 2.0 协议授权。
 
 Fish S2 Pro 模型支持 (fish2_server) 移植自 rodrigomatta 的 [s2.cpp](https://github.com/rodrigomatta/s2.cpp)，使用 Fish Audio Research License 授权。Copyright (c) 39 AI, INC.
+
+Higgs TTS 支持 (higgs_server) 是 [bosonai/higgs-tts-3-4b](https://huggingface.co/bosonai/higgs-tts-3-4b) 的 ggml 移植，详见 [LICENSE-HIGGS](../LICENSE-HIGGS)。
 
 ## 模型下载
 
 **Qwen3-TTS (qwen3tts_server):**
 - Talker: [cstr/qwen3-tts-1.7b-base-GGUF](https://hf-mirror.com/cstr/qwen3-tts-1.7b-base-GGUF)
+
 - Codec: [cstr/qwen3-tts-tokenizer-12hz-GGUF](https://hf-mirror.com/cstr/qwen3-tts-tokenizer-12hz-GGUF)
+
+**Higgs TTS (higgs_server):**
+- Model: [NeemaShioSe/HiggsTTS3.gguf](https://huggingface.co/NeemaShioSe/HiggsTTS3.gguf)
 
 **Fish S2 Pro (fish2_server):**
 - Model: [rodrigomt/s2-pro-gguf](https://huggingface.co/rodrigomt/s2-pro-gguf)
@@ -47,6 +53,9 @@ cmake --build build --config Release
 编译产物在 `build/bin/` 目录：
 - `qwen3tts_server.exe`
 - `fish2_server.exe`
+- `higgs_server.exe`
+- `higgs_cli.exe`
+- `higgs_quantize.exe`
 - `ggml.dll`、`ggml-hip.dll` 等
 
 ## TCP API Reference

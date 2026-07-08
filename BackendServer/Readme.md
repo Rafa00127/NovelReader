@@ -1,11 +1,14 @@
-The conv1d-transpose implementation used here is based on [causal-trans-conv.h](https://github.com/ServeurpersoCom/qwentts.cpp/blob/master/src/causal-trans-conv.h) from qwentts.cpp.
+Qwen3-TTS support (qwen3tts_server) uses the [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) model, licensed under Apache 2.0.
 
 Fish S2 Pro model support (fish2_server) is ported from [s2.cpp](https://github.com/rodrigomatta/s2.cpp) by rodrigomatta, licensed under the Fish Audio Research License. Copyright (c) 39 AI, INC.
+
+Higgs TTS support (higgs_server) is a ggml port of [bosonai/higgs-tts-3-4b](https://huggingface.co/bosonai/higgs-tts-3-4b). See [LICENSE-HIGGS](../LICENSE-HIGGS).
 
 ## Model Downloads
 
 **Qwen3-TTS (qwen3tts_server):**
 - Talker: [cstr/qwen3-tts-1.7b-base-GGUF](https://huggingface.co/cstr/qwen3-tts-1.7b-base-GGUF)
+
 - Codec: [cstr/qwen3-tts-tokenizer-12hz-GGUF](https://huggingface.co/cstr/qwen3-tts-tokenizer-12hz-GGUF)
 
 **Fish S2 Pro (fish2_server):**
